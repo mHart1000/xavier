@@ -1,6 +1,3 @@
-# Copilot instructions (project-specific context)
-.github/copilot-instructions.md
-
 # Python
 __pycache__/
 *.py[cod]
