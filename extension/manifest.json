@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Xavier Voice Browser Control",
+  "version": "0.1.0",
+  "description": "Privacy-first voice control for Firefox using offline speech recognition",
+  
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "xavier@local",
+      "strict_min_version": "109.0"
+    }
+  },
+
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "scripting",
+    "activeTab"
+  ],
+
+  "background": {
+    "scripts": ["background/background.js"]
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
