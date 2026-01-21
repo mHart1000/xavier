@@ -1,0 +1,9 @@
+{
+  "name": "com.xavier.voice_browser",
+  "description": "Xavier voice browser control daemon",
+  "path": "/home/matthew/dev/xavier/install/xavier-daemon.sh",
+  "type": "stdio",
+  "allowed_extensions": [
+    "xavier@local"
+  ]
+}
