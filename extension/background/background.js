@@ -8,7 +8,7 @@
  * - Forward page-level actions to content scripts
  */
 
-const NATIVE_HOST_NAME = "com.matt.voice_browser"
+const NATIVE_HOST_NAME = "com.xavier.voice_browser"
 
 let nativePort = null
 
