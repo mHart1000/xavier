@@ -1,0 +1,22 @@
+{
+  "stt": {
+    "engine": "vosk",
+    "model_path": "models/vosk-en"
+  },
+  "audio": {
+    "sample_rate": 16000,
+    "channels": 1,
+    "chunk_size": 4000
+  },
+  "protocol": {
+    "native_messaging_host": "com.xavier.voice_browser"
+  },
+  "input": {
+    "mode": "push_to_talk",
+    "ptt_key": "return"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "voice_browser.log"
+  }
+}

@@ -1,0 +1,10 @@
+# Xavier Voice Browser Daemon - Python Dependencies
+
+# Speech recognition (offline)
+vosk>=0.3.45
+
+# Audio capture (cross-platform)
+sounddevice>=0.4.6
+
+# Additional audio processing
+numpy>=1.24.0
