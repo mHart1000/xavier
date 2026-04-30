@@ -20,18 +20,20 @@ function connectNativeHost() {
   
   try {
     nativePort = browser.runtime.connectNative(NATIVE_HOST_NAME)
-    
+
     nativePort.onMessage.addListener(handleNativeMessage)
-    
+
     nativePort.onDisconnect.addListener(() => {
       console.error("[Xavier] Native host disconnected:", browser.runtime.lastError)
       nativePort = null
-      
+
       // Attempt reconnection after delay
       setTimeout(connectNativeHost, 3000)
     })
-    
+
     console.log("[Xavier] Connected to native host")
+
+    sendReady()
   } catch (error) {
     console.error("[Xavier] Failed to connect to native host:", error)
   }
@@ -52,11 +54,11 @@ function handleNativeMessage(message) {
     case "command":
       handleCommand(message)
       break
-    
+
     case "ping":
-      sendAck(message.id, "pong")
+      sendAck(message.id)
       break
-    
+
     default:
       console.warn("[Xavier] Unknown message type:", message.type)
   }
@@ -72,67 +74,64 @@ async function handleCommand(message) {
   
   try {
     switch (name) {
-      // Navigation commands
-      case "back":
+      case "nav_back":
         await executeBack()
         break
-      
-      case "forward":
+
+      case "nav_forward":
         await executeForward()
         break
-      
-      case "reload":
+
+      case "nav_reload":
         await executeReload()
         break
-      
-      // Tab commands
-      case "new_tab":
+
+      case "tab_new":
         await executeNewTab()
         break
-      
-      case "close_tab":
+
+      case "tab_close":
         await executeCloseTab()
         break
-      
-      case "next_tab":
+
+      case "tab_next":
         await executeNextTab()
         break
-      
-      case "prev_tab":
-      case "previous_tab":
+
+      case "tab_prev":
         await executePrevTab()
         break
-      
-      // Address bar
+
       case "focus_address":
         await executeFocusAddress()
         break
-      
+
       case "open_url":
         await executeOpenUrl(args)
         break
-      
-      // Page-level commands (forwarded to content script)
+
       case "scroll_up":
       case "scroll_down":
       case "page_up":
       case "page_down":
       case "jump_top":
       case "jump_bottom":
-      case "show_hints":
-      case "hide_hints":
+      case "hints_show":
+      case "hints_hide":
       case "hint_click":
+      case "focus_page":
         await forwardToContentScript(name, args)
         break
-      
+
       default:
-        throw new Error(`Unknown command: ${name}`)
+        sendError(id, "UNKNOWN_COMMAND", `Unknown command: ${name}`)
+        return
     }
-    
-    sendAck(id, true)
+
+    sendAck(id)
   } catch (error) {
     console.error(`[Xavier] Command failed: ${name}`, error)
-    sendError(id, error.message)
+    sendError(id, "EXECUTION_FAILED", error.message)
   }
 }
 
@@ -219,16 +218,16 @@ async function executeOpenUrl(args) {
  */
 async function forwardToContentScript(commandName, args) {
   const tabs = await browser.tabs.query({ active: true, currentWindow: true })
-  
+
   if (!tabs[0]) {
     throw new Error("No active tab found")
   }
-  
+
   const tabId = tabs[0].id
-  
-  // Send message to content script
+
+  let response
   try {
-    await browser.tabs.sendMessage(tabId, {
+    response = await browser.tabs.sendMessage(tabId, {
       command: commandName,
       args: args || {}
     })
@@ -236,37 +235,49 @@ async function forwardToContentScript(commandName, args) {
     console.error("[Xavier] Failed to forward to content script:", error)
     throw new Error(`Content script not ready: ${error.message}`)
   }
+
+  if (response && response.error) {
+    throw new Error(response.error)
+  }
 }
 
-/**
- * Send acknowledgment to native host
- */
-function sendAck(id, result = true) {
+function sendReady() {
+  if (!nativePort) return
+
+  nativePort.postMessage({
+    type: "ready",
+    id: "0",
+    meta: {
+      version: "1.0",
+      browser: "Firefox",
+      platform: navigator.platform || "unknown"
+    }
+  })
+}
+
+function sendAck(id) {
   if (!nativePort) {
     console.error("[Xavier] Cannot send ack: no native connection")
     return
   }
-  
+
   nativePort.postMessage({
     type: "ack",
     id: id,
-    ok: result
+    meta: { ok: true }
   })
 }
 
-/**
- * Send error to native host
- */
-function sendError(id, message) {
+function sendError(id, code, message) {
   if (!nativePort) {
     console.error("[Xavier] Cannot send error: no native connection")
     return
   }
-  
+
   nativePort.postMessage({
     type: "error",
     id: id,
-    message: message
+    meta: { code: code, message: message }
   })
 }
 

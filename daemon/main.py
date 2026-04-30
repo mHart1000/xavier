@@ -1,109 +1,112 @@
 #!/usr/bin/env python3
 """
-Xavier Voice Browser Daemon
-Main entry point 
+Xavier Voice Browser Daemon — entry point.
 
-For MVP: Push-to-talk mode with Enter key
+Runs as a Firefox Native Messaging host: blocks on stdin reading length-prefixed
+JSON messages from the extension and emits commands on stdout. Stays alive for
+the lifetime of the Firefox-extension port; exits on EOF.
+
+Phase 4 verification: when the extension sends `ready`, the daemon emits one
+hardcoded test command so the handshake can be observed end-to-end. This is
+removed in Phase 6 when STT-driven command emission lands.
 """
 
 import sys
 import logging
-import json
 import uuid
-import time
 from pathlib import Path
 
-# Add daemon directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from native_messaging.framing import read_message, send_message
 from core.parser import parse_command
 
 
+# TODO(phase 6): replace with STT-driven emission. Until then, this transcript
+# is parsed and sent once on `ready` so Phase 4 handshake can be verified.
+PHASE4_TEST_TRANSCRIPT = "scroll down"
+
+
 def setup_logging():
-    """Configure logging to stderr (stdin/stdout reserved for native messaging)."""
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler(sys.stderr)]
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)],
     )
 
 
-def send_command(command_dict):
-    """Send a command to the extension with a unique ID."""
-    command_dict["id"] = str(uuid.uuid4())
-    send_message(command_dict)
+def emit_command(command):
+    command["id"] = str(uuid.uuid4())
+    send_message(command)
 
 
-def send_ack(command_id, success=True, message=""):
-    """Send an acknowledgment message."""
-    ack = {
-        "type": "ack",
-        "id": command_id,
-        "ok": success,
-        "message": message
-    }
-    send_message(ack)
+def reply_ack(msg_id):
+    send_message({"type": "ack", "id": msg_id, "meta": {"ok": True}})
 
 
-def send_error(command_id, error_message):
-    """Send an error message."""
-    error = {
-        "type": "error",
-        "id": command_id,
-        "message": error_message
-    }
-    send_message(error)
+def handle_ready(message, logger):
+    logger.info("Extension ready: %s", message.get("meta", {}))
+
+    command = parse_command(PHASE4_TEST_TRANSCRIPT)
+    if command is None:
+        logger.error("Phase 4 test transcript did not parse: %r", PHASE4_TEST_TRANSCRIPT)
+        return
+
+    emit_command(command)
+    logger.info("Sent Phase 4 test command: %s", command["name"])
+
+
+def handle_ack(message, logger):
+    logger.info("ack id=%s", message.get("id"))
+
+
+def handle_error(message, logger):
+    meta = message.get("meta") or {}
+    logger.warning(
+        "error id=%s code=%s message=%s",
+        message.get("id"),
+        meta.get("code"),
+        meta.get("message"),
+    )
+
+
+def handle_ping(message, logger):
+    msg_id = message.get("id")
+    logger.debug("ping id=%s", msg_id)
+    reply_ack(msg_id)
+
+
+HANDLERS = {
+    "ready": handle_ready,
+    "ack": handle_ack,
+    "error": handle_error,
+    "ping": handle_ping,
+}
 
 
 def main():
-    """Main daemon loop."""
     setup_logging()
     logger = logging.getLogger(__name__)
-    
-    logger.info("Xavier Voice Browser Daemon starting...")
-    logger.info("Native messaging interface active")
-    logger.info("MVP mode: Push-to-talk with Enter key (simulated for now)")
-    
-    # Send ready signal
-    send_message({
-        "type": "ready",
-        "id": str(uuid.uuid4()),
-        "message": "Daemon ready"
-    })
-    
-    logger.info("READY - Press Enter to simulate voice command (hardcoded for Phase 3)")
-    
-    # test loop with hardcoded command instead of stt
+    logger.info("Xavier daemon started; waiting for extension messages on stdin")
+
     try:
         while True:
-            # Wait for Enter key on stderr (not stdin - that's for native messaging)
-            # For now, we'll simulate this with a simple timer
-            logger.info("Simulating voice command in 5 seconds...")
-            time.sleep(5)
-            
-            # Hardcoded test command
-            test_transcript = "scroll down"
-            logger.info(f"Simulated transcript: {test_transcript}")
-            
-            # Parse command
-            command = parse_command(test_transcript)
-            
-            if command:
-                logger.info(f"Parsed command: {command['name']}")
-                send_command(command)
-            else:
-                logger.warning(f"Could not parse transcript: {test_transcript}")
-                send_error(str(uuid.uuid4()), f"Unknown command: {test_transcript}")
-            
-            # For testing purposes, send one command then exit
-            logger.info("Test command sent. Exiting...")
-            break
-            
+            message = read_message()
+            if message is None:
+                logger.info("stdin closed; daemon exiting")
+                break
+
+            msg_type = message.get("type")
+            handler = HANDLERS.get(msg_type)
+            if handler is None:
+                logger.warning("Unknown message type: %r", msg_type)
+                continue
+
+            handler(message, logger)
     except KeyboardInterrupt:
-        logger.info("Daemon shutting down...")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
+        logger.info("Interrupted; daemon exiting")
+    except Exception:
+        logger.exception("Fatal error in daemon loop")
         sys.exit(1)
 
 

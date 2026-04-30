@@ -25,47 +25,51 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   try {
     switch (command) {
       case "scroll_up":
-        scrollUp()
+        scrollUp(args)
         break
-      
+
       case "scroll_down":
-        scrollDown()
+        scrollDown(args)
         break
-      
+
       case "page_up":
         pageUp()
         break
-      
+
       case "page_down":
         pageDown()
         break
-      
+
       case "jump_top":
         jumpTop()
         break
-      
+
       case "jump_bottom":
         jumpBottom()
         break
-      
-      case "show_hints":
+
+      case "hints_show":
         showHints()
         break
-      
-      case "hide_hints":
+
+      case "hints_hide":
         hideHints()
         break
-      
+
       case "hint_click":
         hintClick(args)
         break
-      
+
+      case "focus_page":
+        focusPage()
+        break
+
       default:
         console.warn("[Xavier Content] Unknown command:", command)
         sendResponse({ error: "Unknown command" })
         return
     }
-    
+
     sendResponse({ ok: true })
   } catch (error) {
     console.error("[Xavier Content] Command failed:", error)
@@ -73,15 +77,16 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 })
 
-/**
- * Scroll Commands
- */
-function scrollUp() {
-  window.scrollBy({ top: -100, behavior: "smooth" })
+const DEFAULT_SCROLL_AMOUNT = 200
+
+function scrollUp(args) {
+  const amount = (args && Number.isFinite(args.amount)) ? args.amount : DEFAULT_SCROLL_AMOUNT
+  window.scrollBy({ top: -amount, behavior: "smooth" })
 }
 
-function scrollDown() {
-  window.scrollBy({ top: 100, behavior: "smooth" })
+function scrollDown(args) {
+  const amount = (args && Number.isFinite(args.amount)) ? args.amount : DEFAULT_SCROLL_AMOUNT
+  window.scrollBy({ top: amount, behavior: "smooth" })
 }
 
 function pageUp() {
@@ -90,6 +95,14 @@ function pageUp() {
 
 function pageDown() {
   window.scrollBy({ top: window.innerHeight * 0.9, behavior: "smooth" })
+}
+
+function focusPage() {
+  window.focus()
+  if (document.activeElement && document.activeElement.blur) {
+    document.activeElement.blur()
+  }
+  document.body.focus()
 }
 
 /**
@@ -219,28 +232,29 @@ function hideHints() {
 }
 
 /**
- * Click element by hint label
+ * Click element by hint code
  */
 function hintClick(args) {
-  const label = args?.label
-  
-  if (!label) {
-    console.error("[Xavier Content] No hint label provided")
-    return
-  }
-  
-  const normalizedLabel = label.toLowerCase().replace(/\s+/g, '')
-  const element = hintMap.get(normalizedLabel)
-  
-  if (!element) {
-    console.error(`[Xavier Content] Hint not found: ${label}`)
-    return
-  }
-  
-  console.log(`[Xavier Content] Clicking hint: ${label}`)
-  
-  element.click()
+  const code = args && args.code
 
+  if (!code) {
+    throw new Error("Missing required argument: code")
+  }
+
+  if (hintMap.size === 0) {
+    throw new Error("Cannot click hint when hints are not showing")
+  }
+
+  const normalized = String(code).toLowerCase().replace(/\s+/g, '')
+  const element = hintMap.get(normalized)
+
+  if (!element) {
+    throw new Error(`Hint code not found: ${code}`)
+  }
+
+  console.log(`[Xavier Content] Clicking hint: ${code}`)
+
+  element.click()
   hideHints()
 }
 
