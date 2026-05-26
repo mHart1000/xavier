@@ -15,7 +15,9 @@
   "audio": {
     "sample_rate": 16000,
     "channels": 1,
-    "frame_ms": 32
+    "frame_ms": 32,
+    "capture_source": null,
+    "capture_command": null
   },
   "vad": {
     "engine": "silero",

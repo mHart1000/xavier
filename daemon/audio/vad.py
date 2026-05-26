@@ -21,6 +21,10 @@ def window_size(sample_rate):
     return 512 if sample_rate >= 16000 else 256
 
 
+def context_size(sample_rate):
+    return 64 if sample_rate >= 16000 else 32
+
+
 class SileroVad:
 
     def __init__(self, model_path, sample_rate=16000, threshold=0.5):
@@ -28,11 +32,15 @@ class SileroVad:
         self.sample_rate = sample_rate
         self.threshold = threshold
         self.window = window_size(sample_rate)
+        self.context_size = context_size(sample_rate)
         self.session = None
         self._sr_name = None
         self._state_name = None
         self._input_name = None
         self.state = np.zeros(_STATE_SHAPE, dtype=np.float32)
+        # Silero v5 expects the previous frame's tail prepended to each frame;
+        # without it the model returns ~0 on real speech and its state diverges.
+        self.context = np.zeros(self.context_size, dtype=np.float32)
 
     def load(self):
         import onnxruntime as ort
@@ -63,7 +71,11 @@ class SileroVad:
         elif len(audio) > self.window:
             audio = audio[:self.window]
 
-        feed = {self._input_name: audio[np.newaxis, :].astype(np.float32)}
+        # Prepend the carried context (last 64 samples of the previous frame).
+        inp = np.concatenate([self.context, audio])
+        self.context = audio[-self.context_size:].copy()
+
+        feed = {self._input_name: inp[np.newaxis, :].astype(np.float32)}
         if self._state_name:
             feed[self._state_name] = self.state
         if self._sr_name:
@@ -76,5 +88,6 @@ class SileroVad:
         return prob
 
     def reset(self):
-        """Clear recurrent state between utterances."""
+        """Clear recurrent state and carried context between utterances."""
         self.state = np.zeros(_STATE_SHAPE, dtype=np.float32)
+        self.context = np.zeros(self.context_size, dtype=np.float32)

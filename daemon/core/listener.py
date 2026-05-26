@@ -62,6 +62,8 @@ class Listener:
             sample_rate=sample_rate,
             channels=audio_cfg["channels"],
             frame_samples=window_size(sample_rate),
+            source=audio_cfg.get("capture_source"),    # None → system default
+            command=audio_cfg.get("capture_command"),  # None → auto-detect tool
         )
         self.audio.start()
 
@@ -71,21 +73,39 @@ class Listener:
 
     def _run(self):
         threshold = self.config["vad"]["threshold"]
+        sample_rate = self.config["audio"]["sample_rate"]
+        frame_count = 0
+        was_speech = False
         for frame in self.audio.frames():
             if self._stop.is_set():
                 break
 
-            is_speech = self.vad.is_speech(frame) >= threshold
+            prob = self.vad.is_speech(frame)
+            is_speech = prob >= threshold
+            frame_count += 1
+
+            # Heartbeat every ~10 s so the user knows the pipeline is alive.
+            if frame_count % 313 == 0:
+                logger.debug("pipeline tick (vad=%.3f, threshold=%.2f)", prob, threshold)
+
+            # Log when VAD transitions into speech so we can confirm audio is reaching the VAD.
+            if is_speech and not was_speech:
+                logger.info("VAD: speech start (prob=%.3f)", prob)
+            was_speech = is_speech
+
             utterance = self.segmenter.feed(frame, is_speech)
             if utterance is None:
                 continue
 
+            duration_ms = len(utterance) // 2 / sample_rate * 1000
+            logger.info("utterance collected (%.0f ms) — transcribing…", duration_ms)
             self.vad.reset()
             transcript = self.recognizer.transcribe(utterance)
             if not transcript.text:
-                logger.debug("empty transcript")
+                logger.info("empty transcript (utterance %.0f ms)", duration_ms)
                 continue
 
+            logger.info("transcript=%r (conf=%.2f)", transcript.text, transcript.confidence)
             command, reason = self.policy.evaluate(transcript.text, transcript.confidence)
             if command is not None:
                 self.emit(command)

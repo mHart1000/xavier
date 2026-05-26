@@ -135,7 +135,7 @@ def main():
 def run_mic_test():
     """Drive the Listener without Native Messaging; print commands to stderr."""
     config = load_config()
-    setup_logging(config["logging"]["level"])
+    setup_logging("DEBUG")  # always verbose in mic-test
     logger = logging.getLogger(__name__)
     logger.info("Mic test mode — speak commands; Ctrl-C to exit")
 
@@ -156,7 +156,14 @@ def run_mic_test():
 
 
 if __name__ == "__main__":
-    if "--mic-test" in sys.argv:
+    if "--list-devices" in sys.argv:
+        import subprocess
+        try:
+            subprocess.run(["pactl", "list", "sources", "short"], check=False)
+        except FileNotFoundError:
+            print("pactl not found; install pulseaudio-utils to list sources.",
+                  file=sys.stderr)
+    elif "--mic-test" in sys.argv:
         run_mic_test()
     else:
         main()

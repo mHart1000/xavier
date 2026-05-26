@@ -14,7 +14,7 @@ core/
   activation_policy.py  Wake-phrase handling, session state, risk-tier gating, confirmation
   parser.py          Transcript -> structured protocol command (deterministic)
 audio/
-  input.py           Microphone capture (sounddevice), 16 kHz mono int16 frames
+  input.py           Microphone capture (parecord/pw-record subprocess), 16 kHz mono int16 frames
   vad.py             Silero VAD via onnxruntime (per-frame speech probability)
   segmenter.py       Pre-roll / min-speech / end-silence / max-segment utterance cutting
 stt/
@@ -33,6 +33,13 @@ the extension only sees structured commands. See
 (unchanged by STT).
 
 ## Installation
+
+0. Audio capture uses a system tool, not a Python library (PortAudio/sounddevice's
+PipeWire path returns silent/DC-garbage audio on some Linux systems). Install one of:
+```bash
+sudo apt install pulseaudio-utils   # provides parecord (works on PulseAudio + PipeWire)
+# or, on a PipeWire system, pw-record ships with the pipewire package
+```
 
 1. Create a virtual environment:
 ```bash
@@ -75,6 +82,15 @@ To exercise the speech pipeline **without** Firefox (commands print to stderr):
 python main.py --mic-test
 ```
 Speak a command, pause, and watch the parsed command appear. Ctrl-C to stop.
+
+Capture reads from the system default source. To use a specific microphone, list
+sources and set `audio.capture_source` in `config.json` to a source name:
+```bash
+python main.py --list-devices      # = pactl list sources short
+# e.g. "audio": { "capture_source": "alsa_input.usb-Razer_Kiyo_Pro-02.analog-stereo" }
+```
+For non-Pulse/PipeWire setups, override the whole command with
+`audio.capture_command` (an arg list emitting raw s16le PCM on stdout).
 
 Tests (no microphone or models needed):
 ```bash

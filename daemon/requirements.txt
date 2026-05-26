@@ -10,8 +10,9 @@ onnxruntime>=1.16.0
 # Fallback STT (offline, lightweight)
 vosk>=0.3.45
 
-# Audio capture (cross-platform)
-sounddevice>=0.4.6
+# Audio capture is done via a system tool (parecord/pw-record) read as a
+# subprocess, not a Python lib: PortAudio/sounddevice's PipeWire path returns
+# silent/DC garbage on some Linux systems. Install pulseaudio-utils or pipewire.
 
 # Audio processing
 numpy>=1.24.0
