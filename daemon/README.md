@@ -36,23 +36,16 @@ mv vosk-model-small-en-us-0.15 vosk-en
 cd ..
 ```
 
-## Current Phase: Phase 3 (Skeleton)
-
-The daemon currently:
-- ✓ Has proper directory structure
-- ✓ Implements Native Messaging framing
-- ✓ Includes command parser stub
-- ✓ Sends hardcoded test commands
-- ✗ Does not yet do STT (Phase 6)
-- ✗ Does not yet capture audio (Phase 6)
-
 ## Running
 
+In normal use the daemon is launched automatically by the browser extension via Native Messaging; you do not start it by hand.
+
+To run it directly for debugging (it will block waiting for length-prefixed messages on stdin):
 ```bash
 python main.py
 ```
 
-For production use, the daemon will be launched by the browser extension via Native Messaging.
+Command names emitted by the parser follow [../protocol/protocol.md](../protocol/protocol.md), which is the source of truth shared with the extension.
 
 ## Privacy
 

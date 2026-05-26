@@ -1,570 +1,192 @@
-# Voice Browser Protocol Specification
+# Xavier Voice Browser — Protocol Specification (v1.0)
 
 ## Overview
 
-This protocol defines the JSON-based communication between the voice daemon and the Firefox extension via Native Messaging. The protocol is designed to be **stable** and **version-agnostic** to support future daemon implementations (e.g., Rust rewrite) without requiring extension changes.
+This document defines the JSON-based contract between the voice **daemon** and the Firefox **extension** over Native Messaging. The protocol is designed to be **stable** and **language-agnostic** so the daemon can be reimplemented (e.g., Python → Rust) without changing the extension.
+
+Roles:
+- **Daemon**: audio capture, speech-to-text, intent parsing, JSON command emission.
+- **Extension**: JSON parsing, browser/page action execution.
+- The daemon contains no DOM logic. The extension contains no STT.
 
 ---
 
-## Transport Layer
+## Transport
 
-**Native Messaging** over stdin/stdout:
-- Each message is prefixed with a **4-byte little-endian unsigned integer** indicating the message length
-- Message payload is **UTF-8 encoded JSON**
-- No newline delimiters
+Native Messaging over the daemon process's stdin/stdout:
+- Each message is prefixed by a **4-byte little-endian unsigned integer** giving the byte length of the JSON payload that follows.
+- The payload is **UTF-8-encoded JSON**.
+- No newline delimiters.
 
 ---
 
 ## Message Envelope
 
-All messages follow this structure:
+All messages share this structure:
 
 ```json
 {
-  "type": "command" | "ack" | "error" | "ping",
-  "id": "string or number",
+  "type": "command" | "ready" | "ack" | "error" | "ping",
+  "id": "string",
   "name": "command_name",
-  "args": { ... },
-  "meta": { ... }
+  "args": { },
+  "meta": { }
 }
 ```
 
-### Fields
+| Field  | Required for                       | Notes                                                    |
+|--------|------------------------------------|----------------------------------------------------------|
+| `type` | all messages                       | One of the values listed above.                          |
+| `id`   | all messages                       | Unique identifier for correlation. UUID or sequence #.   |
+| `name` | `command`                          | Canonical command name (see Command Reference).          |
+| `args` | per-command (see reference)        | Object. Omit or `{}` if no arguments.                    |
+| `meta` | optional on any message            | Free-form object. See Metadata.                          |
 
-- **type** (required): Message type
-  - `"command"` — Daemon → Extension: execute a browser action
-  - `"ack"` — Extension → Daemon: command received/executed
-  - `"error"` — Extension → Daemon: command failed
-  - `"ping"` — Bidirectional: connection health check
+---
 
-- **id** (required): Unique message identifier for correlation (UUID or sequential integer)
+## Connection Lifecycle
 
-- **name** (required for `command`): The command name (see Command Reference below)
-
-- **args** (optional): Command-specific arguments (object)
-
-- **meta** (optional): Metadata (e.g., STT confidence, raw transcript)
+1. The extension calls `browser.runtime.connectNative("com.xavier.voice_browser")`. Firefox spawns the daemon.
+2. The extension sends a `ready` message announcing itself.
+3. The daemon sends `command` messages; the extension replies with `ack` or `error` keyed off the command `id`.
+4. Either side may send `ping`; the other replies with `ack` carrying the same `id`.
+5. On EOF (Firefox closes the port, or the daemon exits), the other side cleans up. The extension may attempt reconnection.
 
 ---
 
 ## Command Reference (MVP)
 
-### Navigation Commands
+All commands are sent **daemon → extension** with `type: "command"`.
 
-#### `nav_back`
-Navigate to the previous page in history.
-```json
-{
-  "type": "command",
-  "id": "1",
-  "name": "nav_back",
-  "args": {}
-}
-```
+### Navigation
 
-#### `nav_forward`
-Navigate to the next page in history.
-```json
-{
-  "type": "command",
-  "id": "2",
-  "name": "nav_forward",
-  "args": {}
-}
-```
+| `name`         | `args` | Effect                              |
+|----------------|--------|-------------------------------------|
+| `nav_back`     | none   | History back in the active tab.     |
+| `nav_forward`  | none   | History forward in the active tab.  |
+| `nav_reload`   | none   | Reload the active tab.              |
 
-#### `nav_reload`
-Reload the current page.
-```json
-{
-  "type": "command",
-  "id": "3",
-  "name": "nav_reload",
-  "args": {}
-}
-```
+### Scrolling
 
-#### `nav_reload_hard`
-Reload the current page, bypassing cache.
-```json
-{
-  "type": "command",
-  "id": "4",
-  "name": "nav_reload_hard",
-  "args": {}
-}
-```
+| `name`        | `args`                          | Effect                          |
+|---------------|----------------------------------|---------------------------------|
+| `scroll_up`   | `{ "amount": int }` (optional)  | Scroll up; default 200px.       |
+| `scroll_down` | `{ "amount": int }` (optional)  | Scroll down; default 200px.     |
+| `page_up`     | none                            | Scroll up by one viewport.      |
+| `page_down`   | none                            | Scroll down by one viewport.    |
 
-#### `nav_stop`
-Stop loading the current page.
-```json
-{
-  "type": "command",
-  "id": "5",
-  "name": "nav_stop",
-  "args": {}
-}
-```
+### Jump
 
----
+| `name`        | `args` | Effect                       |
+|---------------|--------|------------------------------|
+| `jump_top`    | none   | Scroll to top of page.       |
+| `jump_bottom` | none   | Scroll to bottom of page.    |
 
-### Scrolling Commands
+### Tabs
 
-#### `scroll_up`
-Scroll the page upward.
-```json
-{
-  "type": "command",
-  "id": "6",
-  "name": "scroll_up",
-  "args": {
-    "amount": 200
-  }
-}
-```
-- `amount` (optional, default: 200): Pixels to scroll
+| `name`      | `args` | Effect                                                  |
+|-------------|--------|---------------------------------------------------------|
+| `tab_new`   | none   | Open a new empty tab.                                   |
+| `tab_close` | none   | Close the active tab. *MVP-safe: see Safety §.*         |
+| `tab_next`  | none   | Switch to the next tab (wraps).                         |
+| `tab_prev`  | none   | Switch to the previous tab (wraps).                     |
 
-#### `scroll_down`
-Scroll the page downward.
-```json
-{
-  "type": "command",
-  "id": "7",
-  "name": "scroll_down",
-  "args": {
-    "amount": 200
-  }
-}
-```
+### Hints
 
-#### `page_up`
-Scroll up by one viewport height.
-```json
-{
-  "type": "command",
-  "id": "8",
-  "name": "page_up",
-  "args": {}
-}
-```
+| `name`        | `args`                | Effect                                                          |
+|---------------|------------------------|-----------------------------------------------------------------|
+| `hints_show`  | none                  | Render hint labels over visible clickable elements.             |
+| `hints_hide`  | none                  | Remove all hint labels.                                         |
+| `hint_click`  | `{ "code": "AF" }`    | Click the element labeled `code`. Case-insensitive; see §.      |
 
-#### `page_down`
-Scroll down by one viewport height.
-```json
-{
-  "type": "command",
-  "id": "9",
-  "name": "page_down",
-  "args": {}
-}
-```
+### Focus
+
+| `name`           | `args` | Effect                                                                      |
+|------------------|--------|-----------------------------------------------------------------------------|
+| `focus_address`  | none   | Focus the URL bar. May require an extra user gesture in some contexts.      |
+| `focus_page`     | none   | Return keyboard focus to the page body. Required before `scroll_*` if the URL bar was previously focused. |
+
+### URL (optional MVP)
+
+| `name`     | `args`                        | Effect                                  |
+|------------|-------------------------------|-----------------------------------------|
+| `open_url` | `{ "url": "https://..." }`    | Open the URL in a new tab.              |
 
 ---
 
-### Jump Commands
+## Response Messages
 
-#### `jump_top`
-Jump to the top of the page.
-```json
-{
-  "type": "command",
-  "id": "10",
-  "name": "jump_top",
-  "args": {}
-}
-```
+### `ready` (extension → daemon)
 
-#### `jump_bottom`
-Jump to the bottom of the page.
-```json
-{
-  "type": "command",
-  "id": "11",
-  "name": "jump_bottom",
-  "args": {}
-}
-```
-
----
-
-### Tab Commands
-
-#### `tab_new`
-Open a new tab.
-```json
-{
-  "type": "command",
-  "id": "12",
-  "name": "tab_new",
-  "args": {}
-}
-```
-
-#### `tab_close`
-Close the current tab.
-```json
-{
-  "type": "command",
-  "id": "13",
-  "name": "tab_close",
-  "args": {}
-}
-```
-⚠️ **Note**: May require confirmation in MVP to prevent accidental data loss.
-
-#### `tab_next`
-Switch to the next tab.
-```json
-{
-  "type": "command",
-  "id": "14",
-  "name": "tab_next",
-  "args": {}
-}
-```
-
-#### `tab_prev`
-Switch to the previous tab.
-```json
-{
-  "type": "command",
-  "id": "15",
-  "name": "tab_prev",
-  "args": {}
-}
-```
-
----
-
-### Hint Commands
-
-#### `hints_show`
-Display clickable hint overlays on the page.
-```json
-{
-  "type": "command",
-  "id": "16",
-  "name": "hints_show",
-  "args": {}
-}
-```
-
-#### `hints_hide`
-Remove all hint overlays.
-```json
-{
-  "type": "command",
-  "id": "17",
-  "name": "hints_hide",
-  "args": {}
-}
-```
-
-#### `hint_click`
-Click the element associated with the specified hint code.
-```json
-{
-  "type": "command",
-  "id": "18",
-  "name": "hint_click",
-  "args": {
-    "code": "AF"
-  }
-}
-```
-- `code` (required): Hint label (e.g., "AF", "B7"). Case-insensitive.
-
----
-
-### Focus Commands
-
-#### `focus_address`
-Focus the address bar for URL entry.
-```json
-{
-  "type": "command",
-  "id": "19",
-  "name": "focus_address",
-  "args": {}
-}
-```
-
-#### `focus_page`
-Focus the page content area. **Critical** for ensuring scroll commands work after focusing address bar or other UI elements.
-```json
-{
-  "type": "command",
-  "id": "20",
-  "name": "focus_page",
-  "args": {}
-}
-```
-
----
-
-### URL Commands (Optional MVP)
-
-#### `open_url`
-Navigate to a URL.
-```json
-{
-  "type": "command",
-  # Find Commands (Post-MVP)
-
-####Ready
-
-Sent by the extension immediately after connecting to indicate it's ready to receive commands.
+Sent immediately after the extension connects.
 
 ```json
 {
   "type": "ready",
   "id": "0",
-  "version": "1.0",
   "meta": {
+    "version": "1.0",
     "browser": "Firefox",
     "platform": "linux"
   }
 }
 ```
 
-### Acknowledgment (ack)
+### `ack` (extension → daemon)
 
-Sent by the extension when a command is successfully received/executed.
+Acknowledges a command was received and executed.
 
 ```json
 {
   "type": "ack",
-  "id": "1",
-  "ok": true
+  "id": "<command id>",
+  "meta": { "ok": true }
 }
 ```
 
-### Error
-
-Sent by the extension when a command fails.
+### `error` (extension → daemon)
 
 ```json
 {
   "type": "error",
-  "id": "1",
-  "code": "UNKNOWN_COMMAND",
-  "message": "Unknown command: invalid_command"
-}
-```
-
-- `code` (optional): Machine-readable error code
-- `message` (required): Human-readable error description
-
-**Common Error Codes:**
-- `UNKNOWN_COMMAND` — Command name not recognized
-- `INVALID_ARGS` — Missing or invalid arguments
-- `HINT_NOT_FOUND` — Specified hint code doesn't exist
-- `NO_HINTS_VISIBLE` — Attempted hint_click when hints not showing
-- `EXECUTION_FAILED` — Command valid but execution failed
-
-### Ping
-
-Bidirectional health check.
-
-```json
-{
-  "type": "ping",
-  "id": "0"
-}
-```
-
-Response:
-```json
-{
-  "type": "ack",
-  "id": "0",
-  "ok": true
-}
-```
-
-### Info (Optional, Post-MVP)
-
-Proactive messages from extension to daemon about state changes.
-
-### Extension Error Responses
-
-- **Unknown command**: `{type: "error", code: "UNKNOWN_COMMAND", message: "Unknown command: xyz"}`
-- **Missing args**: `{type: "error", code: "INVALID_ARGS", message: "Missing required argument: code"}`
-- **Invalid hint**: `{type: "error", code: "HINT_NOT_FOUND", message: "Hint code not found: ZZ"}`
-- **No hints visible**: `{type: "error", code: "NO_HINTS_VISIBLE", message: "Cannot click hint when hints are not showing"}`
-- **Execution failure**: `{type: "error", code: "EXECUTION_FAILED", message: "<specific error>"}`
-
-### Daemon Responsibilities
-
-The daemon should:
-- Log all errors for debugging
-- Gracefully handle error responses (don't crash)
-- Optionally provide user feedback (future: TTS, notification)
-
-### Silent Behaviors (No Error)
-
-Some commands may fail silently when the action is impossible but not an error:
-- `nav_back` with no history — no effect, no error
-### Responsibilities
-
-- **Daemon responsibilities**: Audio → STT → Intent parsing → JSON generation
-- **Extension responsibilities**: JSON parsing → Browser action execution
-- **No DOM logic in daemon**: All page interaction happens in the extension
-- **No STT in extension**: All speech processing happens in the daemon
-
-### Behavioral Guarantees
-
-1. **Active Tab/Window**: All commands operate on the currently active tab in the focused window
-2. **Hint Auto-Hide**: Hints automatically hide when:
-   - Page navigates (URL changes)
-   - New page loads
-   - User explicitly calls `hints_hide` or `cancel`
-3. **Hint Code Normalization**: 
-   - Codes are case-insensitive ("af" === "AF")
-   - Daemon normalizes to uppercase before sending
-   - Whitespace ignored ("a f" → "AF")
-4. **Focus Management**:
-   - `focus_page` **must** be called before scroll commands will work after focusing address bar
-   - Extension should track focus state if possible
-5. **Command Ordering**: Commands are processed sequentially in the order received (no parallel execution)
-
-### Connection Lifecycle
-
-1. Extension loads and connects via `browser.runtime.connectNative()`
-2. Extension sends `{type: "ready", version: "1.0"}`
-3. Daemon receives ready signal, begins accepting voice input
-4. Commands flow: Daemon → Extension
-5. Responses flow: Extension → Daemon
-6. On disconnect: Daemon should log and potentially attempt reconnect (future)
-  "data": {
-    "count": 42
+  "id": "<command id>",
+  "meta": {
+    "code": "UNKNOWN_COMMAND",
+    "message": "Unknown command: foo"
   }
 }
 ```
 
-Examples:
-- `hints_visible` — Hints are now showing
-- `hints_hidden` — Hints were hidden
-- `page_loaded` — Navigation completed
-- `tab_changed` — Active tab changedid": "25",
-  "name": "zoom_in",
-  "args": {}
-}
+Defined error codes:
+
+| Code                | Meaning                                                  |
+|---------------------|----------------------------------------------------------|
+| `UNKNOWN_COMMAND`   | `name` not in the command reference.                     |
+| `INVALID_ARGS`      | A required argument was missing or malformed.            |
+| `HINT_NOT_FOUND`    | `hint_click` referenced a code that isn't on the page.   |
+| `NO_HINTS_VISIBLE`  | `hint_click` called while hints are not displayed.       |
+| `EXECUTION_FAILED`  | The command was valid but the browser action failed.     |
+
+### `ping` (bidirectional)
+
+```json
+{ "type": "ping", "id": "abc" }
 ```
 
-#### `zoom_out`
-Decrease page zoom level.
-```json
-{
-  "type": "command",
-  "id": "26",
-  "name": "zoom_out",
-  "args": {}
-}
-```
-
-#### `zoom_reset`
-Reset page zoom to default (100%).
-```json
-{
-  "type": "command",
-  "id": "27",
-  "name": "zoom_reset",
-  "args": {}
-}
-```
+The receiver replies with `ack` carrying the same `id`.
 
 ---
 
-### General Commands
+## Metadata
 
-#### `escape`
-General purpose escape/cancel command. Behavior is context-sensitive:
-- If hints are showing → hide hints
-- If page is loading → stop loading
-- If address bar focused → return focus to page
-- General "get out of current state" command
+The optional `meta` object on any message may carry diagnostic context. The daemon typically attaches:
 
-```json
-{
-  "type": "command",
-  "id": "28",
-  "name": "escape",
-  "args": {}
-}
-```
-
-
-##"id": "21",
-  "name": "open_url",
-  "args": {
-    "url": "https://example.com"
-  }
-}
-```
-- `url` (required): Full URL including protocol
-
----
-
-## Response Messages
-
-### Acknowledgment (ack)
-
-Sent by the extension when a command is successfully received/executed.
-
-```json
-{
-  "type": "ack",
-  "id": "1",
-  "ok": true
-}
-```
-
-### Error
-
-Sent by the extension when a command fails.
-
-```json
-{
-  "type": "error",
-  "id": "1",
-  "message": "Unknown command: invalid_command"
-}
-```
-
-- `message` (required): Human-readable error description
-
-### Ping
-
-Bidirectional health check.
-
-```json
-{
-  "type": "ping",
-  "id": "0"
-}
-```
-
-Response:
-```json
-{
-  "type": "ack",
-  "id": "0",
-  "ok": true
-}
-```
-
----
-
-## Metadata Field
-
-The `meta` object can include:
-
-- **confidence** (float, 0.0–1.0): STT confidence score
-- **raw** (string): Original transcript before parsing
-- **timestamp** (ISO 8601 string): When the command was created
+- `confidence` *(float, 0.0–1.0)* — STT confidence for the parsed transcript.
+- `raw` *(string)* — the original transcript text.
+- `timestamp` *(ISO-8601 string)* — when the daemon emitted the command.
 
 Example:
+
 ```json
 {
   "type": "command",
@@ -574,72 +196,62 @@ Example:
   "meta": {
     "confidence": 0.87,
     "raw": "scroll down",
-    "timestamp": "2026-01-15T10:30:00Z"
+    "timestamp": "2026-04-29T10:30:00Z"
   }
 }
 ```
 
 ---
 
-## Error Handling
+## Behavioral Guarantees
 
-- **Unknown command**: Extension responds with `{type: "error", message: "Unknown command: <name>"}`
-- **Missing required args**: Extension responds with `{type: "error", message: "Missing required argument: <arg>"}`
-- **Execution failure**: Extension responds with `{type: "error", message: "<specific error>"}`
-
----
-
-## Protocol Stability
-
-This protocol is **stable** and must remain backward-compatible. Changes must be:
-- Additive (new commands, new optional fields)
-- Never remove or rename existing commands
-- Never change required argument names or types
-
-Future versions may introduce a `"version"` field in the envelope if breaking changes are unavoidable.
+1. **Active target.** All commands act on the currently active tab in the focused window.
+2. **Sequential execution.** The extension processes commands in receipt order; no parallelism.
+3. **Hint code normalization.** Hint codes are case-insensitive and whitespace-stripped. The daemon should send canonical uppercase (`"AF"`); the extension also accepts `"af"` and `"a f"`.
+4. **Hints auto-hide** on: explicit `hints_hide`, navigation/URL change, and after a successful `hint_click`.
+5. **Focus restoration.** After `focus_address`, `scroll_*` commands may not affect the page until `focus_page` is sent.
+6. **Silent no-ops.** Some commands have no effect but are not errors (e.g., `nav_back` with no history, `scroll_down` at end of page). The extension still returns `ack`.
 
 ---
 
-## Implementation Notes
+## Safety
 
-- **Daemon responsibilities**: Audio → STT → Intent parsing → JSON generation
-- **Extension responsibilities**: JSON parsing → Browser action execution
-- **No DOM logic in daemon**: All page interaction happens in the extension
-- **No STT in extension**: All speech processing happens in the daemon
+The MVP enforces conservative behavior:
+
+- No automatic form submission.
+- No inferred clicks — only explicit `hint_click` with a code that the extension itself generated.
+- `tab_close` is exposed but should be gated by the daemon's parser (e.g., disabled, or requiring a confirmation phrase) to prevent accidental data loss from misrecognition.
 
 ---
 
-## Example Full Flow
+## Stability
 
-1. **User speaks**: "scroll down"
-2. **Daemon processes**:
-   - Captures audio
-   - Vosk transcribes → "scroll down"
-   - Parser normalizes → `scroll_down`
-   - Emits JSON:
-     ```json
-     {
-       "type": "command",
-       "id": "123",
-       "name": "scroll_down",
-       "args": {},
-       "meta": {
-         "confidence": 0.92,
-         "raw": "scroll down"
-       }
-     }
-     ```
-3. **Extension receives** via Native Messaging
-4. **Extension executes**: Injects content script, scrolls page
-5. **Extension responds**:
+This protocol is **stable** as of v1.0. Future revisions must be **additive**:
+
+- New commands or new optional fields are allowed.
+- Renaming or removing existing commands or required fields is not allowed.
+- A breaking change requires a `version` field in the envelope and coordinated daemon + extension updates.
+
+---
+
+## Example End-to-End Flow
+
+1. User holds push-to-talk and says "scroll down".
+2. Daemon transcribes via Vosk, normalizes to `scroll down`, parses to `scroll_down`, and emits:
    ```json
    {
-     "type": "ack",
+     "type": "command",
      "id": "123",
-     "ok": true
+     "name": "scroll_down",
+     "args": {},
+     "meta": { "confidence": 0.92, "raw": "scroll down" }
    }
+   ```
+3. Extension receives via Native Messaging, forwards to the active tab's content script, scrolls, and replies:
+   ```json
+   { "type": "ack", "id": "123", "meta": { "ok": true } }
    ```
 
 ---
 
-End of Protocol Specification v1.0
+End of Protocol Specification v1.0.
