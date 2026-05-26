@@ -6,7 +6,8 @@
       "backend": "faster_whisper",
       "model": "base.en",
       "model_path": "models/whisper",
-      "compute_type": "int8"
+      "compute_type": "int8",
+      "bias_to_commands": true
     },
     "vosk": {
       "model_path": "models/vosk-en"

@@ -8,6 +8,7 @@ import logging
 
 import numpy as np
 
+from core.parser import command_hotwords
 from stt.base import SpeechRecognizer, Transcript
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,8 @@ class WhisperRecognizer(SpeechRecognizer):
     def __init__(self, config, sample_rate=16000):
         super().__init__(config, sample_rate)
         self.model = None
+        # Bias decoding toward the command vocabulary (e.g. "scroll" not "stroll").
+        self.hotwords = command_hotwords() if config.get("bias_to_commands", True) else None
 
     def load(self):
         from faster_whisper import WhisperModel
@@ -39,7 +42,8 @@ class WhisperRecognizer(SpeechRecognizer):
 
         audio = np.frombuffer(pcm16, dtype=np.int16).astype(np.float32) / 32768.0
         segments, _info = self.model.transcribe(
-            audio, language="en", beam_size=1, condition_on_previous_text=False
+            audio, language="en", beam_size=1, condition_on_previous_text=False,
+            hotwords=self.hotwords,
         )
 
         texts, logprobs = [], []
