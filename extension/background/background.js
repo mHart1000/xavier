@@ -223,22 +223,51 @@ async function forwardToContentScript(commandName, args) {
     throw new Error("No active tab found")
   }
 
-  const tabId = tabs[0].id
+  const tab = tabs[0]
+  const message = { command: commandName, args: args || {} }
 
   let response
   try {
-    response = await browser.tabs.sendMessage(tabId, {
-      command: commandName,
-      args: args || {}
-    })
+    response = await browser.tabs.sendMessage(tab.id, message)
   } catch (error) {
-    console.error("[Xavier] Failed to forward to content script:", error)
-    throw new Error(`Content script not ready: ${error.message}`)
+    // No content script in the tab yet (tab predates the extension, or the
+    // extension was reloaded and orphaned the old script). Inject and retry once.
+    if (isNoReceiverError(error)) {
+      await injectContentScript(tab)
+      response = await browser.tabs.sendMessage(tab.id, message)
+    } else {
+      console.error("[Xavier] Failed to forward to content script:", error)
+      throw new Error(`Content script not ready: ${error.message}`)
+    }
   }
 
   if (response && response.error) {
     throw new Error(response.error)
   }
+}
+
+/**
+ * True when sendMessage failed because no content script was listening.
+ */
+function isNoReceiverError(error) {
+  const text = (error && error.message) || ""
+  return /receiving end does not exist|could not establish connection/i.test(text)
+}
+
+/**
+ * Programmatically inject the content script into a tab. Fails on privileged
+ * pages (about:, view-source:, moz-extension:) where injection is forbidden.
+ */
+async function injectContentScript(tab) {
+  if (!tab.url || /^(about:|view-source:|moz-extension:|chrome:|resource:)/.test(tab.url)) {
+    throw new Error(`Cannot run on this page: ${tab.url || "unknown"}`)
+  }
+
+  console.log("[Xavier] Injecting content script into tab", tab.id)
+  await browser.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["content/content.js"]
+  })
 }
 
 function sendReady() {

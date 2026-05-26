@@ -6,13 +6,16 @@ Runs as a Firefox Native Messaging host: blocks on stdin reading length-prefixed
 JSON messages from the extension and emits commands on stdout. Stays alive for
 the lifetime of the Firefox-extension port; exits on EOF.
 
-Phase 4 verification: when the extension sends `ready`, the daemon emits one
-hardcoded test command so the handshake can be observed end-to-end. This is
-removed in Phase 6 when STT-driven command emission lands.
+Phase 4 verification: once the extension sends `ready`, a background thread emits
+a repeating bounce of scroll commands so the daemon->extension->page path can be
+observed end-to-end. All of this (PHASE4_* + start_test_emitter) is removed in
+Phase 6 when STT/push-to-talk drives command emission.
 """
 
 import sys
 import logging
+import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -22,9 +25,17 @@ from native_messaging.framing import read_message, send_message
 from core.parser import parse_command
 
 
-# TODO(phase 6): replace with STT-driven emission. Until then, this transcript
-# is parsed and sent once on `ready` so Phase 4 handshake can be verified.
-PHASE4_TEST_TRANSCRIPT = "scroll down"
+# --- Phase 4 test scaffold (remove in Phase 6) -----------------------------
+PHASE4_TEST_SEQUENCE = [
+    "scroll down", "scroll down", "scroll down",
+    "scroll up", "scroll up", "scroll up",
+]
+PHASE4_TEST_INTERVAL_SECONDS = 3
+# ---------------------------------------------------------------------------
+
+# stdout is shared by the main loop (ping replies) and the emitter thread.
+_send_lock = threading.Lock()
+_emitter_started = False
 
 
 def setup_logging():
@@ -35,25 +46,56 @@ def setup_logging():
     )
 
 
+def safe_send(message):
+    """Send under a lock. Returns False if the pipe is closed (extension gone)."""
+    with _send_lock:
+        try:
+            send_message(message)
+            return True
+        except (BrokenPipeError, OSError):
+            return False
+
+
 def emit_command(command):
     command["id"] = str(uuid.uuid4())
-    send_message(command)
+    return safe_send(command)
 
 
 def reply_ack(msg_id):
-    send_message({"type": "ack", "id": msg_id, "meta": {"ok": True}})
+    safe_send({"type": "ack", "id": msg_id, "meta": {"ok": True}})
+
+
+def start_test_emitter(logger):
+    """Phase 4 scaffold: emit the bounce sequence on a timer until the pipe closes."""
+    global _emitter_started
+    if _emitter_started:
+        return
+    _emitter_started = True
+
+    def loop():
+        i = 0
+        while True:
+            time.sleep(PHASE4_TEST_INTERVAL_SECONDS)
+            transcript = PHASE4_TEST_SEQUENCE[i % len(PHASE4_TEST_SEQUENCE)]
+            i += 1
+
+            command = parse_command(transcript)
+            if command is None:
+                logger.error("Test transcript did not parse: %r", transcript)
+                continue
+
+            if not emit_command(command):
+                logger.info("Pipe closed; stopping test emitter")
+                return
+            logger.info("Sent test command: %s", command["name"])
+
+    threading.Thread(target=loop, daemon=True).start()
+    logger.info("Phase 4 test emitter started (%ss interval)", PHASE4_TEST_INTERVAL_SECONDS)
 
 
 def handle_ready(message, logger):
     logger.info("Extension ready: %s", message.get("meta", {}))
-
-    command = parse_command(PHASE4_TEST_TRANSCRIPT)
-    if command is None:
-        logger.error("Phase 4 test transcript did not parse: %r", PHASE4_TEST_TRANSCRIPT)
-        return
-
-    emit_command(command)
-    logger.info("Sent Phase 4 test command: %s", command["name"])
+    start_test_emitter(logger)
 
 
 def handle_ack(message, logger):
