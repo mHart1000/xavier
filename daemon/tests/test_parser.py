@@ -35,7 +35,8 @@ def test_hint_click_still_parses():
 
 def test_command_grammar_contains_expected_tokens():
     grammar = command_grammar()
-    for token in ("scroll", "down", "click", "open", "url", "a", "z", "[unk]"):
+    for token in ("scroll", "down", "click", "open", "url", "a", "z",
+                  "confirm", "confirmed", "[unk]"):
         assert token in grammar
 
 

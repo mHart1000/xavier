@@ -74,6 +74,13 @@ def test_wake_prefixed_trigger_routes_to_whisper():
     assert out.text == "browser open url example dot com"
 
 
+def test_confirm_word_passes_through_to_vosk():
+    h = make_hybrid("confirm")
+    out = h.transcribe(b"")
+    assert out.text == "confirm"
+    assert h.whisper.calls == 0
+
+
 def test_trigger_falls_back_to_vosk_when_whisper_disabled():
     h = make_hybrid("open url example dot com", whisper_ok=False)
     out = h.transcribe(b"")

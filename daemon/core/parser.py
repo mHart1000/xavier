@@ -60,6 +60,10 @@ PHRASE_COMMANDS = {
     "focus body": "focus_page",
 }
 
+# Spoken words that confirm a HIGH_RISK command (see activation_policy). These
+# must be in command_grammar() or the Vosk fast path maps them to "[unk]".
+CONFIRM_WORDS = ("confirm", "confirmed")
+
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
@@ -77,6 +81,7 @@ def command_grammar(wake_phrase=None):
     random speech is rejected rather than forced onto a command word.
     """
     words = {"click", "open", "url"}  # "open"/"url" trigger the Whisper path
+    words.update(CONFIRM_WORDS)       # gate the HIGH_RISK confirmation step
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
     words.update(string.ascii_lowercase)  # single-letter hint codes (a-z)

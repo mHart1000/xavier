@@ -16,7 +16,7 @@ and rejected at construction so misconfiguration fails fast at startup.
 import logging
 import time
 
-from core.parser import normalize_transcript, parse_command
+from core.parser import CONFIRM_WORDS, normalize_transcript, parse_command
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class ActivationPolicy:
 
         # Confirmation flow takes priority.
         if self.pending_command is not None:
-            if text == "confirm":
+            if text in CONFIRM_WORDS:
                 command = self.pending_command
                 self.pending_command = None
                 self._touch_session(now)

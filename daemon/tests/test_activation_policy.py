@@ -49,6 +49,14 @@ def test_high_risk_requires_confirmation():
     assert cmd["name"] == "tab_close"
 
 
+def test_confirmed_variant_also_confirms():
+    policy = make_policy()
+    policy.evaluate("close tab", now=0)
+    cmd, reason = policy.evaluate("confirmed", now=1)
+    assert reason == "confirmed"
+    assert cmd["name"] == "tab_close"
+
+
 def test_non_confirm_cancels_pending_high():
     policy = make_policy()
     policy.evaluate("close tab", now=0)
