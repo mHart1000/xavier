@@ -6,14 +6,15 @@ Runs as a Firefox Native Messaging host: blocks on stdin reading length-prefixed
 JSON messages from the extension and emits commands on stdout. Stays alive for
 the lifetime of the Firefox-extension port; exits on EOF.
 
-Phase 4 verification: once the extension sends `ready`, a background thread emits
-a repeating bounce of scroll commands so the daemon->extension->page path can be
-observed end-to-end. All of this (PHASE4_* + start_test_emitter) is removed in
-Phase 6 when STT/push-to-talk drives command emission.
+When the extension sends `ready`, the speech Listener starts: microphone -> VAD
+-> segmenter -> STT -> activation policy -> parser -> command. Run with
+`--mic-test` to drive the same pipeline without Firefox (commands print to
+stderr) for local debugging.
 """
 
-import sys
+import json
 import logging
+import sys
 import threading
 import time
 import uuid
@@ -21,28 +22,30 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from core.config import load_config
+from core.listener import Listener
 from native_messaging.framing import read_message, send_message
-from core.parser import parse_command
 
-
-# --- Phase 4 test scaffold (remove in Phase 6) -----------------------------
-PHASE4_TEST_SEQUENCE = [
-    "scroll down", "scroll down", "scroll down",
-    "scroll up", "scroll up", "scroll up",
-]
-PHASE4_TEST_INTERVAL_SECONDS = 3
-# ---------------------------------------------------------------------------
-
-# stdout is shared by the main loop (ping replies) and the emitter thread.
+# stdout is shared by the main loop (ping replies) and the listener thread.
 _send_lock = threading.Lock()
-_emitter_started = False
+_listener = None
+_listener_started = False
 
 
-def setup_logging():
+def setup_logging(level="INFO", log_file=None):
+    # stderr is invisible when Firefox (esp. Snap) launches the daemon, so also
+    # log to a file the user can tail during e2e testing.
+    handlers = [logging.StreamHandler(sys.stderr)]
+    if log_file:
+        try:
+            Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(logging.FileHandler(log_file, mode="a"))
+        except OSError as e:
+            print(f"Could not open log file {log_file}: {e}", file=sys.stderr)
     logging.basicConfig(
-        level=logging.INFO,
+        level=getattr(logging, str(level).upper(), logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stderr)],
+        handlers=handlers,
     )
 
 
@@ -65,37 +68,16 @@ def reply_ack(msg_id):
     safe_send({"type": "ack", "id": msg_id, "meta": {"ok": True}})
 
 
-def start_test_emitter(logger):
-    """Phase 4 scaffold: emit the bounce sequence on a timer until the pipe closes."""
-    global _emitter_started
-    if _emitter_started:
-        return
-    _emitter_started = True
-
-    def loop():
-        i = 0
-        while True:
-            time.sleep(PHASE4_TEST_INTERVAL_SECONDS)
-            transcript = PHASE4_TEST_SEQUENCE[i % len(PHASE4_TEST_SEQUENCE)]
-            i += 1
-
-            command = parse_command(transcript)
-            if command is None:
-                logger.error("Test transcript did not parse: %r", transcript)
-                continue
-
-            if not emit_command(command):
-                logger.info("Pipe closed; stopping test emitter")
-                return
-            logger.info("Sent test command: %s", command["name"])
-
-    threading.Thread(target=loop, daemon=True).start()
-    logger.info("Phase 4 test emitter started (%ss interval)", PHASE4_TEST_INTERVAL_SECONDS)
-
-
 def handle_ready(message, logger):
+    global _listener_started
     logger.info("Extension ready: %s", message.get("meta", {}))
-    start_test_emitter(logger)
+    if _listener_started:
+        return
+    try:
+        _listener.start()
+        _listener_started = True
+    except Exception:
+        logger.exception("Failed to start speech listener; daemon stays up without STT")
 
 
 def handle_ack(message, logger):
@@ -127,9 +109,13 @@ HANDLERS = {
 
 
 def main():
-    setup_logging()
+    global _listener
+    config = load_config()
+    setup_logging(config["logging"]["level"], config["logging"].get("file"))
     logger = logging.getLogger(__name__)
     logger.info("Xavier daemon started; waiting for extension messages on stdin")
+
+    _listener = Listener(config, emit_command)
 
     try:
         while True:
@@ -150,7 +136,43 @@ def main():
     except Exception:
         logger.exception("Fatal error in daemon loop")
         sys.exit(1)
+    finally:
+        if _listener_started:
+            _listener.stop()
+
+
+def run_mic_test():
+    """Drive the Listener without Native Messaging; print commands to stderr."""
+    config = load_config()
+    setup_logging("DEBUG", config["logging"].get("file"))  # always verbose in mic-test
+    logger = logging.getLogger(__name__)
+    logger.info("Mic test mode — speak commands; Ctrl-C to exit")
+
+    def emit_stderr(command):
+        command["id"] = str(uuid.uuid4())
+        print(json.dumps(command), file=sys.stderr, flush=True)
+        return True
+
+    listener = Listener(config, emit_stderr)
+    listener.start()
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        logger.info("Stopping mic test")
+    finally:
+        listener.stop()
 
 
 if __name__ == "__main__":
-    main()
+    if "--list-devices" in sys.argv:
+        import subprocess
+        try:
+            subprocess.run(["pactl", "list", "sources", "short"], check=False)
+        except FileNotFoundError:
+            print("pactl not found; install pulseaudio-utils to list sources.",
+                  file=sys.stderr)
+    elif "--mic-test" in sys.argv:
+        run_mic_test()
+    else:
+        main()

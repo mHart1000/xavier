@@ -1,51 +1,76 @@
 #!/bin/bash
 
 # Xavier Native Messaging Host Installer for Linux
-# Registers the native messaging host with Firefox
+# Registers the native messaging host with Firefox (deb/tarball, Snap, and Flatpak).
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MANIFEST_FILE="$SCRIPT_DIR/com.xavier.voice_browser.json"
-TARGET_DIR="$HOME/.mozilla/native-messaging-hosts"
+LAUNCHER_SCRIPT="$SCRIPT_DIR/xavier-daemon.sh"
+HOST_NAME="com.xavier.voice_browser"
+EXTENSION_ID="xavier@local"
 
 echo "Xavier Native Messaging Host Installer"
 echo "======================================="
 echo
 
-# Check if manifest exists
-if [ ! -f "$MANIFEST_FILE" ]; then
-    echo "Error: Manifest file not found at $MANIFEST_FILE"
-    exit 1
-fi
-
-# Check if launcher script exists and is executable
-LAUNCHER_SCRIPT="$SCRIPT_DIR/xavier-daemon.sh"
-if [ ! -f "$LAUNCHER_SCRIPT" ]; then
-    echo "Error: Launcher script not found at $LAUNCHER_SCRIPT"
-    exit 1
-fi
-
 if [ ! -x "$LAUNCHER_SCRIPT" ]; then
-    echo "Error: Launcher script is not executable. Run: chmod +x $LAUNCHER_SCRIPT"
+    echo "Error: Launcher script missing or not executable: $LAUNCHER_SCRIPT"
+    echo "Run: chmod +x $LAUNCHER_SCRIPT"
     exit 1
 fi
 
-# Create target directory if it doesn't exist
-if [ ! -d "$TARGET_DIR" ]; then
-    echo "Creating directory: $TARGET_DIR"
-    mkdir -p "$TARGET_DIR"
+# Generate the manifest with the launcher's absolute path on THIS machine, so the
+# repo never carries a hard-coded personal path and the install is portable.
+MANIFEST_JSON=$(cat <<EOF
+{
+  "name": "$HOST_NAME",
+  "description": "Xavier voice browser control daemon",
+  "path": "$LAUNCHER_SCRIPT",
+  "type": "stdio",
+  "allowed_extensions": [
+    "$EXTENSION_ID"
+  ]
+}
+EOF
+)
+
+# Firefox reads native-messaging host manifests from a different directory for each
+# packaging format. Install into every location whose base directory exists, so this
+# works regardless of how Firefox was installed:
+#   deb/tarball : ~/.mozilla/native-messaging-hosts
+#   Snap        : ~/snap/firefox/common/.mozilla/native-messaging-hosts
+#   Flatpak     : ~/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts
+declare -a TARGET_DIRS=("$HOME/.mozilla/native-messaging-hosts")
+SNAP_FOUND=0
+if [ -d "$HOME/snap/firefox" ]; then
+    TARGET_DIRS+=("$HOME/snap/firefox/common/.mozilla/native-messaging-hosts")
+    SNAP_FOUND=1
+fi
+if [ -d "$HOME/.var/app/org.mozilla.firefox" ]; then
+    TARGET_DIRS+=("$HOME/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts")
 fi
 
-# Copy manifest to target location
-echo "Installing native messaging host manifest..."
-cp "$MANIFEST_FILE" "$TARGET_DIR/"
+for dir in "${TARGET_DIRS[@]}"; do
+    mkdir -p "$dir"
+    printf '%s\n' "$MANIFEST_JSON" > "$dir/$HOST_NAME.json"
+    echo "Installed manifest -> $dir/$HOST_NAME.json"
+done
 
 echo
 echo "Installation complete!"
-echo
-echo "Manifest installed to: $TARGET_DIR/com.xavier.voice_browser.json"
 echo "Launcher script: $LAUNCHER_SCRIPT"
 echo
-echo "You can now load the extension in Firefox from about:debugging"
+
+if [ "$SNAP_FOUND" -eq 1 ]; then
+    echo "Snap Firefox detected — two confinement caveats:"
+    echo "  - The daemon must live in a NON-hidden path under \$HOME (yours does:"
+    echo "    $SCRIPT_DIR). Snap's 'home' interface cannot see dotfile-hidden dirs."
+    echo "  - Microphone capture relies on Firefox's 'audio-record' Snap interface."
+    echo "    If the mic is silent, check: snap connections firefox | grep audio-record"
+    echo
+fi
+
+echo "Next: load the extension in Firefox at about:debugging#/runtime/this-firefox"
+echo "(Load Temporary Add-on -> select extension/manifest.json)"
 echo

@@ -19,3 +19,6 @@ Thumbs.db
 
 # Project specific
 *.log
+
+# Local STT model files
+daemon/models/
