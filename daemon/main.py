@@ -32,11 +32,20 @@ _listener = None
 _listener_started = False
 
 
-def setup_logging(level="INFO"):
+def setup_logging(level="INFO", log_file=None):
+    # stderr is invisible when Firefox (esp. Snap) launches the daemon, so also
+    # log to a file the user can tail during e2e testing.
+    handlers = [logging.StreamHandler(sys.stderr)]
+    if log_file:
+        try:
+            Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(logging.FileHandler(log_file, mode="a"))
+        except OSError as e:
+            print(f"Could not open log file {log_file}: {e}", file=sys.stderr)
     logging.basicConfig(
         level=getattr(logging, str(level).upper(), logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stderr)],
+        handlers=handlers,
     )
 
 
@@ -102,7 +111,7 @@ HANDLERS = {
 def main():
     global _listener
     config = load_config()
-    setup_logging(config["logging"]["level"])
+    setup_logging(config["logging"]["level"], config["logging"].get("file"))
     logger = logging.getLogger(__name__)
     logger.info("Xavier daemon started; waiting for extension messages on stdin")
 
@@ -135,7 +144,7 @@ def main():
 def run_mic_test():
     """Drive the Listener without Native Messaging; print commands to stderr."""
     config = load_config()
-    setup_logging("DEBUG")  # always verbose in mic-test
+    setup_logging("DEBUG", config["logging"].get("file"))  # always verbose in mic-test
     logger = logging.getLogger(__name__)
     logger.info("Mic test mode — speak commands; Ctrl-C to exit")
 

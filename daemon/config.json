@@ -45,6 +45,6 @@
   },
   "logging": {
     "level": "INFO",
-    "file": "voice_browser.log"
+    "file": "logs/xavier.log"
   }
 }

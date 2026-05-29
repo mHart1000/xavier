@@ -11,6 +11,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DAEMON_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = DAEMON_DIR.parent
 
 DEFAULTS = {
     "stt": {
@@ -40,7 +41,7 @@ DEFAULTS = {
         "allow_continuous_commands_without_wake": True,
     },
     "protocol": {"native_messaging_host": "com.xavier.voice_browser"},
-    "logging": {"level": "INFO", "file": "voice_browser.log"},
+    "logging": {"level": "INFO", "file": "logs/xavier.log"},
 }
 
 # Config keys holding filesystem paths that should be resolved against DAEMON_DIR.
@@ -72,6 +73,11 @@ def _resolve_paths(config):
         value = node.get(leaf)
         if value and not Path(value).is_absolute():
             node[leaf] = str(DAEMON_DIR / value)
+
+    # The log file lives at the repo root (logs/xavier.log), not under daemon/.
+    log_file = config.get("logging", {}).get("file")
+    if log_file and not Path(log_file).is_absolute():
+        config["logging"]["file"] = str(REPO_ROOT / log_file)
     return config
 
 

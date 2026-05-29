@@ -97,6 +97,15 @@ Tests (no microphone or models needed):
 python -m pytest tests
 ```
 
+## Logs
+
+The daemon logs to **stderr** and to a file at the repo root, `logs/xavier.log`
+(set by `logging.file` in `config.json`). When Firefox launches the daemon its
+stderr is usually not visible (especially under Snap), so tail the file:
+```bash
+tail -f ../logs/xavier.log
+```
+
 ## Listener modes & safety tiers
 
 `config.json` configures listener behavior and safety independently of the STT
