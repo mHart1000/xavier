@@ -26,7 +26,7 @@ def test_unknown_engine_raises():
 
 
 def test_falls_back_when_primary_load_fails(monkeypatch):
-    def fake_build(engine, stt_config, sample_rate):
+    def fake_build(engine, stt_config, sample_rate, wake_phrase=None):
         if engine == "whisper":
             raise RuntimeError("whisper model missing")
         return FakeRecognizer(engine)
@@ -42,7 +42,7 @@ def test_falls_back_when_primary_load_fails(monkeypatch):
 
 
 def test_no_fallback_reraises(monkeypatch):
-    def fake_build(engine, stt_config, sample_rate):
+    def fake_build(engine, stt_config, sample_rate, wake_phrase=None):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(base, "_build", fake_build)

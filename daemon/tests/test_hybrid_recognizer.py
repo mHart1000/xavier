@@ -1,0 +1,81 @@
+"""Hybrid recognizer routing: Vosk fast path vs. Whisper accuracy path."""
+
+from stt.base import Transcript
+from stt.hybrid_recognizer import HybridRecognizer
+
+
+class FakeRecognizer:
+    def __init__(self, text="", confidence=1.0):
+        self.result = Transcript(text=text, confidence=confidence)
+        self.calls = 0
+
+    def transcribe(self, pcm16):
+        self.calls += 1
+        return self.result
+
+    def load(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def make_hybrid(vosk_text, whisper_text="whisper output", whisper_ok=True, wake_phrase=None):
+    h = HybridRecognizer({"vosk": {}, "whisper": {}}, 16000, wake_phrase)
+    h.vosk = FakeRecognizer(text=vosk_text)
+    h.whisper = FakeRecognizer(text=whisper_text)
+    h._whisper_ok = whisper_ok
+    return h
+
+
+def test_fixed_command_uses_vosk():
+    h = make_hybrid("scroll down")
+    out = h.transcribe(b"")
+    assert out.text == "scroll down"
+    assert h.whisper.calls == 0
+
+
+def test_trigger_routes_to_whisper():
+    h = make_hybrid("open url example dot com", whisper_text="open url example dot com")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 1
+    assert out.text == "open url example dot com"
+
+
+def test_empty_vosk_rejected():
+    h = make_hybrid("")
+    out = h.transcribe(b"")
+    assert out.text == ""
+    assert h.whisper.calls == 0
+
+
+def test_only_unk_rejected():
+    h = make_hybrid("[unk] [unk]")
+    out = h.transcribe(b"")
+    assert out.text == ""
+    assert h.whisper.calls == 0
+
+
+def test_partial_unk_passes_through_to_vosk():
+    h = make_hybrid("scroll [unk]")
+    out = h.transcribe(b"")
+    assert out.text == "scroll [unk]"
+    assert h.whisper.calls == 0
+
+
+def test_wake_prefixed_trigger_routes_to_whisper():
+    h = make_hybrid(
+        "browser open url example dot com",
+        whisper_text="browser open url example dot com",
+        wake_phrase="browser",
+    )
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 1
+    assert out.text == "browser open url example dot com"
+
+
+def test_trigger_falls_back_to_vosk_when_whisper_disabled():
+    h = make_hybrid("open url example dot com", whisper_ok=False)
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 0
+    assert out.text == "open url example dot com"

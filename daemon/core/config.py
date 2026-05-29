@@ -15,8 +15,8 @@ REPO_ROOT = DAEMON_DIR.parent
 
 DEFAULTS = {
     "stt": {
-        "engine": "whisper",
-        "fallback_engine": "vosk",
+        "engine": "hybrid",
+        "fallback_engine": "whisper",
         "whisper": {"backend": "faster_whisper", "model": "base.en",
                     "model_path": "models/whisper", "compute_type": "int8",
                     "bias_to_commands": True},
@@ -31,7 +31,7 @@ DEFAULTS = {
         "session_timeout_seconds": 300,
         "pre_roll_ms": 500,
         "min_speech_ms": 300,
-        "end_silence_ms": 700,
+        "end_silence_ms": 400,
         "max_segment_seconds": 8,
     },
     "safety": {

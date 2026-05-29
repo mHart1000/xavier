@@ -19,8 +19,9 @@ audio/
   segmenter.py       Pre-roll / min-speech / end-silence / max-segment utterance cutting
 stt/
   base.py            SpeechRecognizer interface + Transcript + factory (with fallback)
-  whisper_recognizer.py  Primary: faster-whisper
-  vosk_recognizer.py     Fallback: Vosk
+  hybrid_recognizer.py   Default: grammar-constrained Vosk fast path + Whisper accuracy path
+  whisper_recognizer.py  Accuracy path / fallback: faster-whisper
+  vosk_recognizer.py     Fast path (grammar-constrained); also a plain fallback engine
 native_messaging/
   framing.py         Firefox Native Messaging length-prefixed framing
 platform/            OS-specific host registration
@@ -31,6 +32,12 @@ The STT engine is pluggable: the rest of the system only sees transcripts, and
 the extension only sees structured commands. See
 [../protocol/protocol.md](../protocol/protocol.md) for the command contract
 (unchanged by STT).
+
+The default `hybrid` engine runs a grammar-constrained Vosk recognizer on every
+utterance (fast: ~0.6s end-to-end for the fixed command set) and, when the
+transcript begins with a trigger such as "open url", re-transcribes the audio
+with Whisper for open-vocabulary accuracy (~1s). Out-of-grammar speech is
+rejected. Set `stt.engine` to `whisper` or `vosk` for a single-engine setup.
 
 ## Installation
 
@@ -64,7 +71,8 @@ curl -L -o models/silero_vad.onnx \
 `models/whisper/` automatically on first run, then runs fully offline. No manual
 step is required.
 
-5. (Optional) Vosk fallback model — only needed if Whisper fails to load:
+5. Vosk model — **required** for the default `hybrid` engine (also used as the
+plain `vosk` fallback engine):
 ```bash
 cd models
 curl -L -O https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
