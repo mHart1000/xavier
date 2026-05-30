@@ -320,11 +320,7 @@ if (window.__xavierContentLoaded) {
 
     clearHighlights()
 
-    const needle = normalizeLabel(text)
-    const elements = collectClickableElements()
-    const match =
-      elements.find(el => normalizeLabel(elementLabel(el)) === needle) ||
-      elements.find(el => normalizeLabel(elementLabel(el)).includes(needle))
+    const match = findTextMatch(normalizeLabel(text))
 
     if (!match) {
       throw new Error(`No element matching text: ${text}`)
@@ -334,6 +330,35 @@ if (window.__xavierContentLoaded) {
     drawHighlight(match)
 
     console.log(`[Xavier Content] Highlighted target for: ${text}`)
+  }
+
+  /**
+   * Best clickable element whose visible label contains the needle. Ranks an
+   * exact label over a prefix over a substring, then prefers the shortest label
+   * so a specific link wins over a large container that merely contains it
+   * (e.g. wraps each post in a div[onclick] whose text includes the
+   * title).
+   */
+  function findTextMatch(needle) {
+    const candidates = collectClickableElements()
+      .map(el => ({ el, label: normalizeLabel(elementLabel(el)) }))
+      .filter(candidate => candidate.label.includes(needle))
+
+    if (candidates.length === 0) {
+      return null
+    }
+
+    function rank(label) {
+      if (label === needle) return 0
+      if (label.startsWith(needle)) return 1
+      return 2
+    }
+
+    candidates.sort((a, b) =>
+      rank(a.label) - rank(b.label) || a.label.length - b.label.length
+    )
+
+    return candidates[0].el
   }
 
   /**
