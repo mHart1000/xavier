@@ -5,6 +5,7 @@ Output command names match protocol/protocol.md v1.0.
 """
 
 import re
+import string
 import logging
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,10 @@ PHRASE_COMMANDS = {
     "focus body": "focus_page",
 }
 
+# Spoken words that confirm a HIGH_RISK command (see activation_policy). These
+# must be in command_grammar() or the Vosk fast path maps them to "[unk]".
+CONFIRM_WORDS = ("confirm", "confirmed")
+
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
@@ -66,6 +71,28 @@ def command_hotwords():
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
     return " ".join(sorted(words))
+
+
+def command_grammar(wake_phrase=None):
+    """
+    Vosk grammar (list of allowable tokens) that constrains recognition to the
+    command vocabulary. Restricting to known words makes Vosk both faster and
+    more accurate. "[unk]" lets out-of-grammar audio map to an unknown token so
+    random speech is rejected rather than forced onto a command word.
+    """
+    words = {"click", "open", "url"}  # "open"/"url" trigger the Whisper path
+    words.update(CONFIRM_WORDS)       # gate the HIGH_RISK confirmation step
+    for phrase in PHRASE_COMMANDS:
+        words.update(phrase.split())
+    words.update(string.ascii_lowercase)  # single-letter hint codes (a-z)
+    if wake_phrase:
+        words.update(normalize_transcript(wake_phrase).split())
+    return sorted(words) + ["[unk]"]
+
+
+def command_triggers():
+    """Normalized phrases that route an utterance to the Whisper (accuracy) path."""
+    return ("open url",)
 
 
 def parse_command(transcript, confidence=1.0):
@@ -93,8 +120,27 @@ def parse_command(transcript, confidence=1.0):
         code = hint_match.group(1).replace(' ', '').upper()
         return _make_command("hint_click", {"code": code}, confidence, raw)
 
+    url_match = re.match(r'^open url (.+)$', normalized)
+    if url_match:
+        url = _spoken_to_url(url_match.group(1))
+        return _make_command("open_url", {"url": url}, confidence, raw)
+
     logger.warning(f"No command matched for transcript: {raw}")
     return None
+
+
+def _spoken_to_url(spoken):
+    """
+    Turn a basic spoken URL into a real one. Input is already normalized
+    (lowercase, punctuation stripped), so spoken "dot"/"slash" are restored to
+    "." / "/", remaining spaces are dropped, and https:// is prepended when no
+    scheme is present. Best-effort only — see the open_url note in the plan.
+    """
+    url = spoken.replace(" dot ", ".").replace(" slash ", "/")
+    url = url.replace(" ", "")
+    if "://" not in url:
+        url = "https://" + url
+    return url
 
 
 def _make_command(name, args, confidence, raw):

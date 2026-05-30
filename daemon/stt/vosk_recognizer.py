@@ -1,7 +1,8 @@
 """
-Vosk recognizer (Kaldi). Kept as a lightweight fallback engine. Migrated from
-the old core/stt_interface.py and adapted to the one-shot transcribe() contract:
-the whole utterance is fed at once and FinalResult() is returned.
+Vosk recognizer (Kaldi). Used two ways: unconstrained as a lightweight fallback
+engine, and grammar-constrained as the fast path inside HybridRecognizer. Adapted
+to the one-shot transcribe() contract: the whole utterance is fed at once and
+FinalResult() is returned.
 """
 
 import json
@@ -14,8 +15,9 @@ logger = logging.getLogger(__name__)
 
 class VoskRecognizer(SpeechRecognizer):
 
-    def __init__(self, config, sample_rate=16000):
+    def __init__(self, config, sample_rate=16000, grammar=None):
         super().__init__(config, sample_rate)
+        self.grammar = grammar
         self.model = None
         self.recognizer = None
 
@@ -25,8 +27,14 @@ class VoskRecognizer(SpeechRecognizer):
         model_path = self.config.get("model_path", "models/vosk-en")
         logger.info("Loading Vosk model from %s", model_path)
         self.model = Model(model_path)
-        self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
-        logger.info("Vosk model loaded")
+        if self.grammar is not None:
+            self.recognizer = KaldiRecognizer(
+                self.model, self.sample_rate, json.dumps(self.grammar)
+            )
+            logger.info("Vosk model loaded (grammar-constrained, %d tokens)", len(self.grammar))
+        else:
+            self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
+            logger.info("Vosk model loaded")
 
     def transcribe(self, pcm16):
         if self.recognizer is None:

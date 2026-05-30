@@ -43,7 +43,9 @@ class Listener:
         # Build policy first so a bad listener mode fails before loading models.
         self.policy = ActivationPolicy(listener_cfg, self.config["safety"])
 
-        self.recognizer = create_recognizer(self.config["stt"], sample_rate)
+        self.recognizer = create_recognizer(
+            self.config["stt"], sample_rate, wake_phrase=listener_cfg.get("wake_phrase")
+        )
 
         self.vad = SileroVad(vad_cfg["model_path"], sample_rate, vad_cfg["threshold"])
         self.vad.load()
