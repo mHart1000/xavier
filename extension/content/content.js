@@ -318,9 +318,13 @@ if (window.__xavierContentLoaded) {
       throw new Error("Missing required argument: text")
     }
 
+    // Capture the current target before clearing: a follow-up highlight (e.g.
+    // "highlight comments" after "highlight post title") anchors to it so the
+    // nearest match is chosen instead of the global best.
+    const anchor = activeTarget
     clearHighlights()
 
-    const match = findTextMatch(normalizeLabel(text))
+    const match = findTextMatch(normalizeLabel(text), anchor)
 
     if (!match) {
       throw new Error(`No element matching text: ${text}`)
@@ -333,13 +337,20 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Best clickable element whose visible label contains the needle. Ranks an
-   * exact label over a prefix over a substring, then prefers the shortest label
-   * so a specific link wins over a large container that merely contains it
-   * (e.g. wraps each post in a div[onclick] whose text includes the
-   * title).
+   * Best clickable element whose visible label contains the needle.
+   *
+   * First keep only innermost matches - drop any candidate that contains another
+   * candidate. A clickable container and a clickable element nested inside it can
+   * both match the same text; if the container is allowed to win it becomes the
+   * target, and proximity measured from a container favors sibling containers
+   * over its own descendants, so a later anchored highlight resolves to the
+   * wrong group. Restricting to innermost matches keeps the target specific.
+   *
+   * Then: with an anchor (the previously highlighted element) pick the match
+   * nearest it in the DOM tree; without one, rank exact label over prefix over
+   * substring, then prefer the shortest label.
    */
-  function findTextMatch(needle) {
+  function findTextMatch(needle, anchor) {
     const candidates = collectClickableElements()
       .map(el => ({ el, label: normalizeLabel(elementLabel(el)) }))
       .filter(candidate => candidate.label.includes(needle))
@@ -348,17 +359,56 @@ if (window.__xavierContentLoaded) {
       return null
     }
 
+    const innermost = candidates.filter(candidate =>
+      !candidates.some(other => other.el !== candidate.el && candidate.el.contains(other.el))
+    )
+
     function rank(label) {
       if (label === needle) return 0
       if (label.startsWith(needle)) return 1
       return 2
     }
 
-    candidates.sort((a, b) =>
-      rank(a.label) - rank(b.label) || a.label.length - b.label.length
-    )
+    if (anchor) {
+      innermost.sort((a, b) =>
+        domDistance(anchor, a.el) - domDistance(anchor, b.el) ||
+        rank(a.label) - rank(b.label) ||
+        a.label.length - b.label.length
+      )
+    } else {
+      innermost.sort((a, b) =>
+        rank(a.label) - rank(b.label) || a.label.length - b.label.length
+      )
+    }
 
-    return candidates[0].el
+    return innermost[0].el
+  }
+
+  /**
+   * Tree distance between two elements: steps up from b to the lowest common
+   * ancestor, plus that ancestor's depth above a. Infinity if unrelated.
+   */
+  function domDistance(a, b) {
+    const depthFromA = new Map()
+    let node = a
+    let depth = 0
+    while (node) {
+      depthFromA.set(node, depth)
+      node = node.parentElement
+      depth++
+    }
+
+    node = b
+    let steps = 0
+    while (node) {
+      if (depthFromA.has(node)) {
+        return steps + depthFromA.get(node)
+      }
+      node = node.parentElement
+      steps++
+    }
+
+    return Infinity
   }
 
   /**
