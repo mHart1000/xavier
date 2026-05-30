@@ -99,6 +99,16 @@ All commands are sent **daemon → extension** with `type: "command"`.
 | `hints_hide`  | none                  | Remove all hint labels.                                         |
 | `hint_click`  | `{ "code": "AF" }`    | Click the element labeled `code`. Case-insensitive; see §.      |
 
+### Text Targeting
+
+Name an element by its visible text, then act on it (parallel to the hint flow).
+
+| `name`             | `args`                  | Effect                                                                                  |
+|--------------------|-------------------------|-----------------------------------------------------------------------------------------|
+| `highlight_text`   | `{ "text": "sign in" }` | Highlight the element whose visible text matches `text`; set it as the active target.   |
+| `click`            | none                    | Click the active highlighted target, then clear the highlight.                          |
+| `clear_highlights` | none                    | Remove the highlight and clear the active target.                                       |
+
 ### Focus
 
 | `name`           | `args` | Effect                                                                      |
@@ -165,6 +175,8 @@ Defined error codes:
 | `INVALID_ARGS`      | A required argument was missing or malformed.            |
 | `HINT_NOT_FOUND`    | `hint_click` referenced a code that isn't on the page.   |
 | `NO_HINTS_VISIBLE`  | `hint_click` called while hints are not displayed.       |
+| `TEXT_NOT_FOUND`    | `highlight_text` matched no visible element.             |
+| `NO_ACTIVE_TARGET`  | `click` called with no highlighted target.               |
 | `EXECUTION_FAILED`  | The command was valid but the browser action failed.     |
 
 ### `ping` (bidirectional)
@@ -208,7 +220,7 @@ Example:
 1. **Active target.** All commands act on the currently active tab in the focused window.
 2. **Sequential execution.** The extension processes commands in receipt order; no parallelism.
 3. **Hint code normalization.** Hint codes are case-insensitive and whitespace-stripped. The daemon should send canonical uppercase (`"AF"`); the extension also accepts `"af"` and `"a f"`.
-4. **Hints auto-hide** on: explicit `hints_hide`, navigation/URL change, and after a successful `hint_click`.
+4. **Hints auto-hide** on: explicit `hints_hide`, navigation/URL change, and after a successful `hint_click`. Likewise the **`highlight_text` target auto-clears** on: explicit `clear_highlights`, navigation/URL change, a new `highlight_text`, and after a successful `click`.
 5. **Focus restoration.** After `focus_address`, `scroll_*` commands may not affect the page until `focus_page` is sent.
 6. **Silent no-ops.** Some commands have no effect but are not errors (e.g., `nav_back` with no history, `scroll_down` at end of page). The extension still returns `ack`.
 
@@ -219,7 +231,7 @@ Example:
 The MVP enforces conservative behavior:
 
 - No automatic form submission.
-- No inferred clicks — only explicit `hint_click` with a code that the extension itself generated.
+- No inferred clicks — only explicit `hint_click` (a code the extension itself generated) or `click` acting on a target the user explicitly named via `highlight_text`.
 - `tab_close` is exposed but should be gated by the daemon's parser (e.g., disabled, or requiring a confirmation phrase) to prevent accidental data loss from misrecognition.
 
 ---

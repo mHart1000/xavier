@@ -96,3 +96,5 @@ def test_risk_tier_classification():
     assert risk_tier("nav_back") == "medium"
     assert risk_tier("tab_close") == "high"
     assert risk_tier("something_unknown") == "medium"
+    assert risk_tier("highlight_text") == "low"
+    assert risk_tier("click") == "medium"

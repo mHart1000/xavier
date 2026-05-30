@@ -46,4 +46,28 @@ def test_command_grammar_includes_wake_word():
 
 
 def test_command_triggers():
-    assert command_triggers() == ("open url",)
+    assert command_triggers() == ("open url", "highlight")
+
+
+def test_bare_click_parses():
+    cmd = parse_command("click")
+    assert cmd["name"] == "click"
+    assert cmd["args"] == {}
+
+
+def test_highlight_text_parses():
+    cmd = parse_command("highlight sign in")
+    assert cmd["name"] == "highlight_text"
+    assert cmd["args"]["text"] == "sign in"
+
+
+def test_highlight_without_text_is_no_match():
+    assert parse_command("highlight") is None
+
+
+def test_clear_highlights_parses():
+    assert parse_command("clear highlights")["name"] == "clear_highlights"
+
+
+def test_command_grammar_contains_highlight():
+    assert "highlight" in command_grammar()

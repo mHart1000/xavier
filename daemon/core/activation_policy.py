@@ -28,10 +28,11 @@ CONFIRM_TIMEOUT_SECONDS = 15
 LOW_RISK = frozenset({
     "scroll_up", "scroll_down", "page_up", "page_down",
     "jump_top", "jump_bottom", "hints_show", "hints_hide", "focus_page",
+    "highlight_text", "clear_highlights",
 })
 MEDIUM_RISK = frozenset({
     "nav_back", "nav_forward", "nav_reload",
-    "tab_new", "tab_next", "tab_prev", "hint_click", "focus_address",
+    "tab_new", "tab_next", "tab_prev", "hint_click", "click", "focus_address",
 })
 HIGH_RISK = frozenset({"tab_close", "open_url"})
 

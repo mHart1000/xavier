@@ -119,6 +119,9 @@ async function handleCommand(message) {
       case "hints_show":
       case "hints_hide":
       case "hint_click":
+      case "highlight_text":
+      case "click":
+      case "clear_highlights":
       case "focus_page":
         await forwardToContentScript(name, args)
         break

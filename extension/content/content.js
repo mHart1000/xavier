@@ -20,10 +20,30 @@ if (window.__xavierContentLoaded) {
 
   const XAVIER_HINT_CONTAINER_ID = "xavier-hint-overlay"
   const XAVIER_HINT_CLASS = "xavier-hint"
+  const XAVIER_HIGHLIGHT_CONTAINER_ID = "xavier-highlight-overlay"
   const DEFAULT_SCROLL_AMOUNT = 200
+
+  // Elements both the hint overlay and text highlighting can target.
+  const CLICKABLE_SELECTORS = [
+    'a[href]',
+    'button',
+    'input[type="button"]',
+    'input[type="submit"]',
+    'input[type="reset"]',
+    '[role="button"]',
+    '[onclick]',
+    'select',
+    'textarea',
+    'input[type="text"]',
+    'input[type="search"]',
+    'input[type="email"]',
+    'input[type="password"]',
+    '[tabindex]:not([tabindex="-1"])'
+  ]
 
   let hintElements = []
   let hintMap = new Map()
+  let activeTarget = null
 
   /**
    * Listen for commands from background script
@@ -69,6 +89,18 @@ if (window.__xavierContentLoaded) {
 
         case "hint_click":
           hintClick(args)
+          break
+
+        case "highlight_text":
+          highlightText(args)
+          break
+
+        case "click":
+          clickActiveTarget()
+          break
+
+        case "clear_highlights":
+          clearHighlights()
           break
 
         case "focus_page":
@@ -137,42 +169,7 @@ if (window.__xavierContentLoaded) {
     // Clean up any existing hints first
     hideHints()
 
-    // Find all clickable elements
-    const clickableSelectors = [
-      'a[href]',
-      'button',
-      'input[type="button"]',
-      'input[type="submit"]',
-      'input[type="reset"]',
-      '[role="button"]',
-      '[onclick]',
-      'select',
-      'textarea',
-      'input[type="text"]',
-      'input[type="search"]',
-      'input[type="email"]',
-      'input[type="password"]',
-      '[tabindex]:not([tabindex="-1"])'
-    ]
-
-    const elements = document.querySelectorAll(clickableSelectors.join(','))
-
-    // Filter to visible elements only
-    const visibleElements = Array.from(elements).filter(el => {
-      const rect = el.getBoundingClientRect()
-      const style = window.getComputedStyle(el)
-
-      return (
-        rect.width > 0 &&
-        rect.height > 0 &&
-        style.visibility !== 'hidden' &&
-        style.display !== 'none' &&
-        rect.top < window.innerHeight &&
-        rect.bottom > 0 &&
-        rect.left < window.innerWidth &&
-        rect.right > 0
-      )
-    })
+    const visibleElements = collectClickableElements()
 
     console.log(`[Xavier Content] Found ${visibleElements.length} visible clickable elements`)
 
@@ -283,6 +280,141 @@ if (window.__xavierContentLoaded) {
     } while (num >= 0)
 
     return label
+  }
+
+  /**
+   * Shared collection of visible, clickable elements in the viewport. Used by
+   * both the hint overlay and text highlighting.
+   */
+  function collectClickableElements() {
+    const elements = document.querySelectorAll(CLICKABLE_SELECTORS.join(','))
+    return Array.from(elements).filter(isVisible)
+  }
+
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect()
+    const style = window.getComputedStyle(el)
+
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== 'hidden' &&
+      style.display !== 'none' &&
+      rect.top < window.innerHeight &&
+      rect.bottom > 0 &&
+      rect.left < window.innerWidth &&
+      rect.right > 0
+    )
+  }
+
+  /**
+   * Text targeting - highlight an element by its visible text. The element is
+   * remembered as the active target so a following "click" acts on it.
+   */
+  function highlightText(args) {
+    const text = args && args.text
+
+    if (!text) {
+      throw new Error("Missing required argument: text")
+    }
+
+    clearHighlights()
+
+    const needle = normalizeLabel(text)
+    const elements = collectClickableElements()
+    const match =
+      elements.find(el => normalizeLabel(elementLabel(el)) === needle) ||
+      elements.find(el => normalizeLabel(elementLabel(el)).includes(needle))
+
+    if (!match) {
+      throw new Error(`No element matching text: ${text}`)
+    }
+
+    activeTarget = match
+    drawHighlight(match)
+
+    console.log(`[Xavier Content] Highlighted target for: ${text}`)
+  }
+
+  /**
+   * Click the active highlighted target, then clear the highlight.
+   */
+  function clickActiveTarget() {
+    if (!activeTarget) {
+      throw new Error("No highlighted target to click")
+    }
+
+    const target = activeTarget
+    // Clear first so a navigation triggered by the click leaves no stale overlay.
+    clearHighlights()
+    target.click()
+
+    console.log("[Xavier Content] Clicked active target")
+  }
+
+  /**
+   * Remove the highlight overlay and forget the active target.
+   */
+  function clearHighlights() {
+    const container = document.getElementById(XAVIER_HIGHLIGHT_CONTAINER_ID)
+    if (container) {
+      container.remove()
+    }
+
+    activeTarget = null
+  }
+
+  /**
+   * Visible label of an element: text, else aria-label, else value.
+   */
+  function elementLabel(el) {
+    const text = (el.textContent || "").trim()
+    if (text) return text
+
+    const aria = el.getAttribute("aria-label")
+    if (aria) return aria
+
+    return el.value || ""
+  }
+
+  function normalizeLabel(value) {
+    return String(value).toLowerCase().replace(/\s+/g, ' ').trim()
+  }
+
+  /**
+   * Draw a single highlight box over the target element. The container is fixed
+   * to the viewport, so the box uses viewport coordinates (no scroll offset).
+   */
+  function drawHighlight(el) {
+    const container = document.createElement('div')
+    container.id = XAVIER_HIGHLIGHT_CONTAINER_ID
+    container.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2147483646;
+    `
+
+    const rect = el.getBoundingClientRect()
+    const box = document.createElement('div')
+    box.style.cssText = `
+      position: absolute;
+      top: ${rect.top}px;
+      left: ${rect.left}px;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      border: 3px solid #ff6b00;
+      background: rgba(255, 107, 0, 0.15);
+      border-radius: 3px;
+      box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.4);
+      pointer-events: none;
+    `
+
+    container.appendChild(box)
+    document.body.appendChild(container)
   }
 
   console.log("[Xavier Content] Content script loaded")
