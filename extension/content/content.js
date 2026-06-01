@@ -20,10 +20,39 @@ if (window.__xavierContentLoaded) {
 
   const XAVIER_HINT_CONTAINER_ID = "xavier-hint-overlay"
   const XAVIER_HINT_CLASS = "xavier-hint"
+  const XAVIER_HIGHLIGHT_CONTAINER_ID = "xavier-highlight-overlay"
   const DEFAULT_SCROLL_AMOUNT = 200
+
+  // Elements both the hint overlay and text highlighting can target.
+  const CLICKABLE_SELECTORS = [
+    'a[href]',
+    'button',
+    'input[type="button"]',
+    'input[type="submit"]',
+    'input[type="reset"]',
+    '[role="button"]',
+    '[onclick]',
+    'select',
+    'textarea',
+    'input[type="text"]',
+    'input[type="search"]',
+    'input[type="email"]',
+    'input[type="password"]',
+    '[tabindex]:not([tabindex="-1"])'
+  ]
+
+  // Commands that move the viewport. They invalidate the fixed-position highlight
+  // and hint overlays (they would drift onto arbitrary elements), so transient
+  // state is dismissed before they run.
+  const VIEWPORT_MOVING_COMMANDS = new Set([
+    "scroll_up", "scroll_down", "page_up", "page_down", "jump_top", "jump_bottom"
+  ])
 
   let hintElements = []
   let hintMap = new Map()
+  let activeTarget = null
+  let matchList = []
+  let matchIndex = 0
 
   /**
    * Listen for commands from background script
@@ -34,6 +63,10 @@ if (window.__xavierContentLoaded) {
     const { command, args } = message
 
     try {
+      if (VIEWPORT_MOVING_COMMANDS.has(command)) {
+        handleCancel()
+      }
+
       switch (command) {
         case "scroll_up":
           scrollUp(args)
@@ -69,6 +102,34 @@ if (window.__xavierContentLoaded) {
 
         case "hint_click":
           hintClick(args)
+          break
+
+        case "highlight_text":
+          highlightText(args)
+          break
+
+        case "click":
+          clickActiveTarget()
+          break
+
+        case "open_new_tab":
+          openActiveTargetInNewTab()
+          break
+
+        case "clear_highlights":
+          clearHighlights()
+          break
+
+        case "cancel":
+          handleCancel()
+          break
+
+        case "highlight_next":
+          cycleMatch(1)
+          break
+
+        case "highlight_previous":
+          cycleMatch(-1)
           break
 
         case "focus_page":
@@ -137,42 +198,7 @@ if (window.__xavierContentLoaded) {
     // Clean up any existing hints first
     hideHints()
 
-    // Find all clickable elements
-    const clickableSelectors = [
-      'a[href]',
-      'button',
-      'input[type="button"]',
-      'input[type="submit"]',
-      'input[type="reset"]',
-      '[role="button"]',
-      '[onclick]',
-      'select',
-      'textarea',
-      'input[type="text"]',
-      'input[type="search"]',
-      'input[type="email"]',
-      'input[type="password"]',
-      '[tabindex]:not([tabindex="-1"])'
-    ]
-
-    const elements = document.querySelectorAll(clickableSelectors.join(','))
-
-    // Filter to visible elements only
-    const visibleElements = Array.from(elements).filter(el => {
-      const rect = el.getBoundingClientRect()
-      const style = window.getComputedStyle(el)
-
-      return (
-        rect.width > 0 &&
-        rect.height > 0 &&
-        style.visibility !== 'hidden' &&
-        style.display !== 'none' &&
-        rect.top < window.innerHeight &&
-        rect.bottom > 0 &&
-        rect.left < window.innerWidth &&
-        rect.right > 0
-      )
-    })
+    const visibleElements = collectClickableElements()
 
     console.log(`[Xavier Content] Found ${visibleElements.length} visible clickable elements`)
 
@@ -283,6 +309,294 @@ if (window.__xavierContentLoaded) {
     } while (num >= 0)
 
     return label
+  }
+
+  /**
+   * Clickable elements currently in the viewport - for the hint overlay, which
+   * can only label what the user can see.
+   */
+  function collectClickableElements() {
+    const elements = document.querySelectorAll(CLICKABLE_SELECTORS.join(','))
+    return Array.from(elements).filter(el => isRendered(el) && isInViewport(el))
+  }
+
+  /**
+   * Clickable elements anywhere on the page (rendered, not necessarily on
+   * screen) - for text matching, so "next" can step to matches below the fold
+   * and scroll them into view.
+   */
+  function collectMatchableElements() {
+    const elements = document.querySelectorAll(CLICKABLE_SELECTORS.join(','))
+    return Array.from(elements).filter(isRendered)
+  }
+
+  function isRendered(el) {
+    const rect = el.getBoundingClientRect()
+    const style = window.getComputedStyle(el)
+
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== 'hidden' &&
+      style.display !== 'none'
+    )
+  }
+
+  function isInViewport(el) {
+    const rect = el.getBoundingClientRect()
+
+    return (
+      rect.top < window.innerHeight &&
+      rect.bottom > 0 &&
+      rect.left < window.innerWidth &&
+      rect.right > 0
+    )
+  }
+
+  /**
+   * Text targeting - highlight an element by its visible text. All matches are
+   * kept as an ordered list (the active one is the click target) so
+   * "next"/"previous" can step through repeats of the same text.
+   */
+  function highlightText(args) {
+    const text = args && args.text
+
+    if (!text) {
+      throw new Error("Missing required argument: text")
+    }
+
+    // Capture the current target before clearing: a follow-up highlight anchors
+    // to it so the nearest match is chosen instead of the global best.
+    const anchor = activeTarget
+    clearHighlights()
+
+    const matches = findTextMatches(normalizeLabel(text), anchor)
+
+    if (matches.length === 0) {
+      throw new Error(`No element matching text: ${text}`)
+    }
+
+    matchList = matches
+    matchIndex = 0
+    applyMatch()
+
+    console.log(`[Xavier Content] Highlighted 1/${matchList.length} for: ${text}`)
+  }
+
+  /**
+   * Ordered clickable elements whose visible label contains the needle.
+   *
+   * First keep only innermost matches - drop any candidate that contains another
+   * candidate. A clickable container and a clickable element nested inside it can
+   * both match the same text; if the container is allowed to win it becomes the
+   * target, and proximity measured from a container favors sibling containers
+   * over its own descendants, so a later anchored highlight resolves to the
+   * wrong group. Restricting to innermost matches keeps the target specific.
+   *
+   * Order: with an anchor (the previously highlighted element), nearest in the
+   * DOM tree first. Without one, by label rank (exact, then prefix, then
+   * substring); ties keep document order (stable sort), so "next" steps top to
+   * bottom down the page.
+   */
+  function findTextMatches(needle, anchor) {
+    const candidates = collectMatchableElements()
+      .map(el => ({ el, label: normalizeLabel(elementLabel(el)) }))
+      .filter(candidate => candidate.label.includes(needle))
+
+    const innermost = candidates.filter(candidate =>
+      !candidates.some(other => other.el !== candidate.el && candidate.el.contains(other.el))
+    )
+
+    function rank(label) {
+      if (label === needle) return 0
+      if (label.startsWith(needle)) return 1
+      return 2
+    }
+
+    if (anchor) {
+      innermost.sort((a, b) =>
+        domDistance(anchor, a.el) - domDistance(anchor, b.el) ||
+        rank(a.label) - rank(b.label)
+      )
+    } else {
+      innermost.sort((a, b) => rank(a.label) - rank(b.label))
+    }
+
+    return innermost.map(candidate => candidate.el)
+  }
+
+  /**
+   * Tree distance between two elements: steps up from b to the lowest common
+   * ancestor, plus that ancestor's depth above a. Infinity if unrelated.
+   */
+  function domDistance(a, b) {
+    const depthFromA = new Map()
+    let node = a
+    let depth = 0
+    while (node) {
+      depthFromA.set(node, depth)
+      node = node.parentElement
+      depth++
+    }
+
+    node = b
+    let steps = 0
+    while (node) {
+      if (depthFromA.has(node)) {
+        return steps + depthFromA.get(node)
+      }
+      node = node.parentElement
+      steps++
+    }
+
+    return Infinity
+  }
+
+  /**
+   * Click the active highlighted target, then clear the highlight.
+   */
+  function clickActiveTarget() {
+    if (!activeTarget) {
+      throw new Error("No highlighted target to click")
+    }
+
+    const target = activeTarget
+    // Clear first so a navigation triggered by the click leaves no stale overlay.
+    clearHighlights()
+    target.click()
+
+    console.log("[Xavier Content] Clicked active target")
+  }
+
+  /**
+   * Open the active highlighted target's link in a new background tab (focus
+   * stays on the current tab), then clear the highlight. Tab creation belongs to
+   * the background script, so resolve the URL here and hand it off.
+   */
+  function openActiveTargetInNewTab() {
+    if (!activeTarget) {
+      throw new Error("No highlighted target to open")
+    }
+
+    const anchor = activeTarget.closest && activeTarget.closest('a[href]')
+    const url = anchor ? anchor.href : null
+    if (!url || url.startsWith("javascript:")) {
+      throw new Error("Highlighted target has no link to open in a new tab")
+    }
+
+    browser.runtime.sendMessage({ type: "open_tab", url })
+    clearHighlights()
+
+    console.log("[Xavier Content] Opened active target in new tab")
+  }
+
+  /**
+   * Step to the next (step=1) or previous (step=-1) match of the current text,
+   * wrapping around, and highlight it.
+   */
+  function cycleMatch(step) {
+    if (matchList.length === 0) {
+      throw new Error("No highlighted matches to cycle")
+    }
+
+    matchIndex = (matchIndex + step + matchList.length) % matchList.length
+    applyMatch()
+
+    console.log(`[Xavier Content] Highlighted ${matchIndex + 1}/${matchList.length}`)
+  }
+
+  /**
+   * Make matchList[matchIndex] the active target: scroll it into view when off
+   * screen, then redraw the highlight box over it.
+   */
+  function applyMatch() {
+    removeHighlightOverlay()
+    activeTarget = matchList[matchIndex]
+
+    if (!isInViewport(activeTarget)) {
+      activeTarget.scrollIntoView({ block: "center", behavior: "instant" })
+    }
+
+    drawHighlight(activeTarget)
+  }
+
+  /**
+   * Remove the highlight overlay and forget the active target and match list.
+   */
+  function clearHighlights() {
+    removeHighlightOverlay()
+    activeTarget = null
+    matchList = []
+    matchIndex = 0
+  }
+
+  function removeHighlightOverlay() {
+    const container = document.getElementById(XAVIER_HIGHLIGHT_CONTAINER_ID)
+    if (container) {
+      container.remove()
+    }
+  }
+
+  /**
+   * Cancel - dismiss the current transient page state. Multipurpose by design:
+   * each transient feature adds its teardown here as it is built.
+   */
+  function handleCancel() {
+    clearHighlights()
+    hideHints()
+  }
+
+  /**
+   * Visible label of an element: text, else aria-label, else value.
+   */
+  function elementLabel(el) {
+    const text = (el.textContent || "").trim()
+    if (text) return text
+
+    const aria = el.getAttribute("aria-label")
+    if (aria) return aria
+
+    return el.value || ""
+  }
+
+  function normalizeLabel(value) {
+    return String(value).toLowerCase().replace(/\s+/g, ' ').trim()
+  }
+
+  /**
+   * Draw a single highlight box over the target element. The container is fixed
+   * to the viewport, so the box uses viewport coordinates (no scroll offset).
+   */
+  function drawHighlight(el) {
+    const container = document.createElement('div')
+    container.id = XAVIER_HIGHLIGHT_CONTAINER_ID
+    container.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2147483646;
+    `
+
+    const rect = el.getBoundingClientRect()
+    const box = document.createElement('div')
+    box.style.cssText = `
+      position: absolute;
+      top: ${rect.top}px;
+      left: ${rect.left}px;
+      width: ${rect.width}px;
+      height: ${rect.height}px;
+      border: 3px solid #ff6b00;
+      background: rgba(255, 107, 0, 0.15);
+      border-radius: 3px;
+      box-shadow: 0 0 0 2px rgba(255, 107, 0, 0.4);
+      pointer-events: none;
+    `
+
+    container.appendChild(box)
+    document.body.appendChild(container)
   }
 
   console.log("[Xavier Content] Content script loaded")

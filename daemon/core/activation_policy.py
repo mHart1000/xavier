@@ -16,7 +16,7 @@ and rejected at construction so misconfiguration fails fast at startup.
 import logging
 import time
 
-from core.parser import CONFIRM_WORDS, normalize_transcript, parse_command
+from core.parser import CANCEL_WORDS, CONFIRM_WORDS, normalize_transcript, parse_command
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,12 @@ CONFIRM_TIMEOUT_SECONDS = 15
 LOW_RISK = frozenset({
     "scroll_up", "scroll_down", "page_up", "page_down",
     "jump_top", "jump_bottom", "hints_show", "hints_hide", "focus_page",
+    "highlight_text", "highlight_next", "highlight_previous", "clear_highlights",
+    "cancel",
 })
 MEDIUM_RISK = frozenset({
     "nav_back", "nav_forward", "nav_reload",
-    "tab_new", "tab_next", "tab_prev", "hint_click", "focus_address",
+    "tab_new", "tab_next", "tab_prev", "hint_click", "click", "open_new_tab", "focus_address",
 })
 HIGH_RISK = frozenset({"tab_close", "open_url"})
 
@@ -90,6 +92,9 @@ class ActivationPolicy:
                 self.pending_command = None
                 self._touch_session(now)
                 return command, "confirmed"
+            if text in CANCEL_WORDS:
+                self.pending_command = None
+                return None, "cancelled"
             self.pending_command = None  # any other utterance cancels
 
         session_ok = self._session_active(now)
