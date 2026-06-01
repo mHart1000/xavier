@@ -42,8 +42,8 @@ if (window.__xavierContentLoaded) {
   ]
 
   // Commands that move the viewport. They invalidate the fixed-position highlight
-  // overlay (it would drift onto an arbitrary element), so the highlight is
-  // cleared before they run.
+  // and hint overlays (they would drift onto arbitrary elements), so transient
+  // state is dismissed before they run.
   const VIEWPORT_MOVING_COMMANDS = new Set([
     "scroll_up", "scroll_down", "page_up", "page_down", "jump_top", "jump_bottom"
   ])
@@ -64,7 +64,7 @@ if (window.__xavierContentLoaded) {
 
     try {
       if (VIEWPORT_MOVING_COMMANDS.has(command)) {
-        clearHighlights()
+        handleCancel()
       }
 
       switch (command) {
