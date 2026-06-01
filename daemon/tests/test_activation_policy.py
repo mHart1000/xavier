@@ -115,3 +115,4 @@ def test_risk_tier_classification():
     assert risk_tier("highlight_next") == "low"
     assert risk_tier("cancel") == "low"
     assert risk_tier("click") == "medium"
+    assert risk_tier("open_new_tab") == "medium"

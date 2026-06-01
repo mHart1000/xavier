@@ -123,6 +123,7 @@ async function handleCommand(message) {
       case "highlight_next":
       case "highlight_previous":
       case "click":
+      case "open_new_tab":
       case "clear_highlights":
       case "cancel":
       case "focus_page":
@@ -315,6 +316,21 @@ function sendError(id, code, message) {
     meta: { code: code, message: message }
   })
 }
+
+/**
+ * Content scripts ask the background to open a link in a new background tab
+ * (the ctrl-click equivalent: new tab, focus stays on the current tab). The
+ * content script owns which element is highlighted; the background owns tabs.
+ */
+browser.runtime.onMessage.addListener((message, sender) => {
+  if (message && message.type === "open_tab") {
+    browser.tabs.create({
+      url: message.url,
+      active: false,
+      openerTabId: sender.tab && sender.tab.id
+    }).catch(error => console.error("[Xavier] open_tab failed:", error))
+  }
+})
 
 // Initialize on startup
 connectNativeHost()

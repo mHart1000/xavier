@@ -84,5 +84,16 @@ def test_cancel_parses():
     assert parse_command("cancel")["name"] == "cancel"
 
 
+def test_open_new_tab_parses():
+    assert parse_command("open in new tab")["name"] == "open_new_tab"
+    assert parse_command("control click")["name"] == "open_new_tab"
+
+
+def test_plain_new_tab_still_parses():
+    # "open in new tab" must not collide with the plain open-a-tab commands.
+    assert parse_command("new tab")["name"] == "tab_new"
+    assert parse_command("open tab")["name"] == "tab_new"
+
+
 def test_command_grammar_contains_highlight():
     assert "highlight" in command_grammar()

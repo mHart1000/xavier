@@ -112,6 +112,10 @@ if (window.__xavierContentLoaded) {
           clickActiveTarget()
           break
 
+        case "open_new_tab":
+          openActiveTargetInNewTab()
+          break
+
         case "clear_highlights":
           clearHighlights()
           break
@@ -462,6 +466,28 @@ if (window.__xavierContentLoaded) {
     target.click()
 
     console.log("[Xavier Content] Clicked active target")
+  }
+
+  /**
+   * Open the active highlighted target's link in a new background tab (focus
+   * stays on the current tab), then clear the highlight. Tab creation belongs to
+   * the background script, so resolve the URL here and hand it off.
+   */
+  function openActiveTargetInNewTab() {
+    if (!activeTarget) {
+      throw new Error("No highlighted target to open")
+    }
+
+    const anchor = activeTarget.closest && activeTarget.closest('a[href]')
+    const url = anchor ? anchor.href : null
+    if (!url || url.startsWith("javascript:")) {
+      throw new Error("Highlighted target has no link to open in a new tab")
+    }
+
+    browser.runtime.sendMessage({ type: "open_tab", url })
+    clearHighlights()
+
+    console.log("[Xavier Content] Opened active target in new tab")
   }
 
   /**

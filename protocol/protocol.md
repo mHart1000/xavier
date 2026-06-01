@@ -109,6 +109,7 @@ Name an element by its visible text, then act on it (parallel to the hint flow).
 | `highlight_next`     | none                    | Move the highlight to the next element matching the current text (wraps).               |
 | `highlight_previous` | none                    | Move the highlight to the previous element matching the current text (wraps).           |
 | `click`              | none                    | Click the active highlighted target, then clear the highlight.                          |
+| `open_new_tab`       | none                    | Open the active highlighted target's link in a new background tab (focus stays on the current tab), then clear the highlight. |
 | `clear_highlights`   | none                    | Remove the highlight and clear the active target.                                       |
 
 ### Focus
