@@ -41,6 +41,13 @@ if (window.__xavierContentLoaded) {
     '[tabindex]:not([tabindex="-1"])'
   ]
 
+  // Commands that move the viewport. They invalidate the fixed-position highlight
+  // overlay (it would drift onto an arbitrary element), so the highlight is
+  // cleared before they run.
+  const VIEWPORT_MOVING_COMMANDS = new Set([
+    "scroll_up", "scroll_down", "page_up", "page_down", "jump_top", "jump_bottom"
+  ])
+
   let hintElements = []
   let hintMap = new Map()
   let activeTarget = null
@@ -56,6 +63,10 @@ if (window.__xavierContentLoaded) {
     const { command, args } = message
 
     try {
+      if (VIEWPORT_MOVING_COMMANDS.has(command)) {
+        clearHighlights()
+      }
+
       switch (command) {
         case "scroll_up":
           scrollUp(args)
