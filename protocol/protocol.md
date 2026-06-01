@@ -124,6 +124,14 @@ Name an element by its visible text, then act on it (parallel to the hint flow).
 |------------|-------------------------------|-----------------------------------------|
 | `open_url` | `{ "url": "https://..." }`    | Open the URL in a new tab.              |
 
+### General
+
+| `name`   | `args` | Effect                                                                                      |
+|----------|--------|---------------------------------------------------------------------------------------------|
+| `cancel` | none   | Dismiss the current transient page state: clears the highlight and hides the hint overlay. Multipurpose — teardown for new transient features is added here over time. |
+
+> Spoken "cancel" is also handled by the daemon to abort a pending high-risk confirmation; in that case it is consumed there and no `cancel` command is sent.
+
 ---
 
 ## Response Messages

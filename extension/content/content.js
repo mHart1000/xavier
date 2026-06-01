@@ -105,6 +105,10 @@ if (window.__xavierContentLoaded) {
           clearHighlights()
           break
 
+        case "cancel":
+          handleCancel()
+          break
+
         case "highlight_next":
           cycleMatch(1)
           break
@@ -494,6 +498,15 @@ if (window.__xavierContentLoaded) {
     if (container) {
       container.remove()
     }
+  }
+
+  /**
+   * Cancel - dismiss the current transient page state. Multipurpose by design:
+   * each transient feature adds its teardown here as it is built.
+   */
+  function handleCancel() {
+    clearHighlights()
+    hideHints()
   }
 
   /**

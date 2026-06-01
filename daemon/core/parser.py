@@ -57,6 +57,7 @@ PHRASE_COMMANDS = {
     "click": "click",
     "clear highlight": "clear_highlights",
     "clear highlights": "clear_highlights",
+    "cancel": "cancel",
     "next": "highlight_next",
     "previous": "highlight_previous",
     "focus address": "focus_address",
@@ -68,6 +69,11 @@ PHRASE_COMMANDS = {
 # Spoken words that confirm a HIGH_RISK command (see activation_policy). These
 # must be in command_grammar() or the Vosk fast path maps them to "[unk]".
 CONFIRM_WORDS = ("confirm", "confirmed")
+
+# Spoken words that abort a pending confirmation (see activation_policy). "cancel"
+# is multipurpose: with no pending command it parses to the cancel command and
+# dismisses transient page state in the extension instead.
+CANCEL_WORDS = ("cancel",)
 
 
 def command_hotwords():
@@ -87,6 +93,7 @@ def command_grammar(wake_phrase=None):
     """
     words = {"click", "open", "url", "highlight"}  # open/url/highlight route to Whisper
     words.update(CONFIRM_WORDS)       # gate the HIGH_RISK confirmation step
+    words.update(CANCEL_WORDS)        # abort a pending confirmation
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
     words.update(string.ascii_lowercase)  # single-letter hint codes (a-z)

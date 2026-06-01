@@ -124,6 +124,7 @@ async function handleCommand(message) {
       case "highlight_previous":
       case "click":
       case "clear_highlights":
+      case "cancel":
       case "focus_page":
         await forwardToContentScript(name, args)
         break

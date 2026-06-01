@@ -80,5 +80,9 @@ def test_next_tab_still_parses():
     assert parse_command("previous tab")["name"] == "tab_prev"
 
 
+def test_cancel_parses():
+    assert parse_command("cancel")["name"] == "cancel"
+
+
 def test_command_grammar_contains_highlight():
     assert "highlight" in command_grammar()
