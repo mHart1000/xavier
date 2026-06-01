@@ -57,6 +57,8 @@ PHRASE_COMMANDS = {
     "click": "click",
     "clear highlight": "clear_highlights",
     "clear highlights": "clear_highlights",
+    "next": "highlight_next",
+    "previous": "highlight_previous",
     "focus address": "focus_address",
     "address bar": "focus_address",
     "focus page": "focus_page",

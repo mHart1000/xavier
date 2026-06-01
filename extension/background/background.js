@@ -120,6 +120,8 @@ async function handleCommand(message) {
       case "hints_hide":
       case "hint_click":
       case "highlight_text":
+      case "highlight_next":
+      case "highlight_previous":
       case "click":
       case "clear_highlights":
       case "focus_page":

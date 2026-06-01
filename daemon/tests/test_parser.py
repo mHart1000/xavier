@@ -69,5 +69,16 @@ def test_clear_highlights_parses():
     assert parse_command("clear highlights")["name"] == "clear_highlights"
 
 
+def test_next_previous_parse():
+    assert parse_command("next")["name"] == "highlight_next"
+    assert parse_command("previous")["name"] == "highlight_previous"
+
+
+def test_next_tab_still_parses():
+    # bare "next" cycles matches, but "next tab" must still switch tabs.
+    assert parse_command("next tab")["name"] == "tab_next"
+    assert parse_command("previous tab")["name"] == "tab_prev"
+
+
 def test_command_grammar_contains_highlight():
     assert "highlight" in command_grammar()

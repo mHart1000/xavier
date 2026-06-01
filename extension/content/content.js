@@ -44,6 +44,8 @@ if (window.__xavierContentLoaded) {
   let hintElements = []
   let hintMap = new Map()
   let activeTarget = null
+  let matchList = []
+  let matchIndex = 0
 
   /**
    * Listen for commands from background script
@@ -101,6 +103,14 @@ if (window.__xavierContentLoaded) {
 
         case "clear_highlights":
           clearHighlights()
+          break
+
+        case "highlight_next":
+          cycleMatch(1)
+          break
+
+        case "highlight_previous":
+          cycleMatch(-1)
           break
 
         case "focus_page":
@@ -283,15 +293,25 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Shared collection of visible, clickable elements in the viewport. Used by
-   * both the hint overlay and text highlighting.
+   * Clickable elements currently in the viewport - for the hint overlay, which
+   * can only label what the user can see.
    */
   function collectClickableElements() {
     const elements = document.querySelectorAll(CLICKABLE_SELECTORS.join(','))
-    return Array.from(elements).filter(isVisible)
+    return Array.from(elements).filter(el => isRendered(el) && isInViewport(el))
   }
 
-  function isVisible(el) {
+  /**
+   * Clickable elements anywhere on the page (rendered, not necessarily on
+   * screen) - for text matching, so "next" can step to matches below the fold
+   * and scroll them into view.
+   */
+  function collectMatchableElements() {
+    const elements = document.querySelectorAll(CLICKABLE_SELECTORS.join(','))
+    return Array.from(elements).filter(isRendered)
+  }
+
+  function isRendered(el) {
     const rect = el.getBoundingClientRect()
     const style = window.getComputedStyle(el)
 
@@ -299,7 +319,14 @@ if (window.__xavierContentLoaded) {
       rect.width > 0 &&
       rect.height > 0 &&
       style.visibility !== 'hidden' &&
-      style.display !== 'none' &&
+      style.display !== 'none'
+    )
+  }
+
+  function isInViewport(el) {
+    const rect = el.getBoundingClientRect()
+
+    return (
       rect.top < window.innerHeight &&
       rect.bottom > 0 &&
       rect.left < window.innerWidth &&
@@ -308,8 +335,9 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Text targeting - highlight an element by its visible text. The element is
-   * remembered as the active target so a following "click" acts on it.
+   * Text targeting - highlight an element by its visible text. All matches are
+   * kept as an ordered list (the active one is the click target) so
+   * "next"/"previous" can step through repeats of the same text.
    */
   function highlightText(args) {
     const text = args && args.text
@@ -318,26 +346,26 @@ if (window.__xavierContentLoaded) {
       throw new Error("Missing required argument: text")
     }
 
-    // Capture the current target before clearing: a follow-up highlight (e.g.
-    // "highlight comments" after "highlight post title") anchors to it so the
-    // nearest match is chosen instead of the global best.
+    // Capture the current target before clearing: a follow-up highlight anchors
+    // to it so the nearest match is chosen instead of the global best.
     const anchor = activeTarget
     clearHighlights()
 
-    const match = findTextMatch(normalizeLabel(text), anchor)
+    const matches = findTextMatches(normalizeLabel(text), anchor)
 
-    if (!match) {
+    if (matches.length === 0) {
       throw new Error(`No element matching text: ${text}`)
     }
 
-    activeTarget = match
-    drawHighlight(match)
+    matchList = matches
+    matchIndex = 0
+    applyMatch()
 
-    console.log(`[Xavier Content] Highlighted target for: ${text}`)
+    console.log(`[Xavier Content] Highlighted 1/${matchList.length} for: ${text}`)
   }
 
   /**
-   * Best clickable element whose visible label contains the needle.
+   * Ordered clickable elements whose visible label contains the needle.
    *
    * First keep only innermost matches - drop any candidate that contains another
    * candidate. A clickable container and a clickable element nested inside it can
@@ -346,18 +374,15 @@ if (window.__xavierContentLoaded) {
    * over its own descendants, so a later anchored highlight resolves to the
    * wrong group. Restricting to innermost matches keeps the target specific.
    *
-   * Then: with an anchor (the previously highlighted element) pick the match
-   * nearest it in the DOM tree; without one, rank exact label over prefix over
-   * substring, then prefer the shortest label.
+   * Order: with an anchor (the previously highlighted element), nearest in the
+   * DOM tree first. Without one, by label rank (exact, then prefix, then
+   * substring); ties keep document order (stable sort), so "next" steps top to
+   * bottom down the page.
    */
-  function findTextMatch(needle, anchor) {
-    const candidates = collectClickableElements()
+  function findTextMatches(needle, anchor) {
+    const candidates = collectMatchableElements()
       .map(el => ({ el, label: normalizeLabel(elementLabel(el)) }))
       .filter(candidate => candidate.label.includes(needle))
-
-    if (candidates.length === 0) {
-      return null
-    }
 
     const innermost = candidates.filter(candidate =>
       !candidates.some(other => other.el !== candidate.el && candidate.el.contains(other.el))
@@ -372,16 +397,13 @@ if (window.__xavierContentLoaded) {
     if (anchor) {
       innermost.sort((a, b) =>
         domDistance(anchor, a.el) - domDistance(anchor, b.el) ||
-        rank(a.label) - rank(b.label) ||
-        a.label.length - b.label.length
+        rank(a.label) - rank(b.label)
       )
     } else {
-      innermost.sort((a, b) =>
-        rank(a.label) - rank(b.label) || a.label.length - b.label.length
-      )
+      innermost.sort((a, b) => rank(a.label) - rank(b.label))
     }
 
-    return innermost[0].el
+    return innermost.map(candidate => candidate.el)
   }
 
   /**
@@ -428,15 +450,50 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Remove the highlight overlay and forget the active target.
+   * Step to the next (step=1) or previous (step=-1) match of the current text,
+   * wrapping around, and highlight it.
+   */
+  function cycleMatch(step) {
+    if (matchList.length === 0) {
+      throw new Error("No highlighted matches to cycle")
+    }
+
+    matchIndex = (matchIndex + step + matchList.length) % matchList.length
+    applyMatch()
+
+    console.log(`[Xavier Content] Highlighted ${matchIndex + 1}/${matchList.length}`)
+  }
+
+  /**
+   * Make matchList[matchIndex] the active target: scroll it into view when off
+   * screen, then redraw the highlight box over it.
+   */
+  function applyMatch() {
+    removeHighlightOverlay()
+    activeTarget = matchList[matchIndex]
+
+    if (!isInViewport(activeTarget)) {
+      activeTarget.scrollIntoView({ block: "center", behavior: "instant" })
+    }
+
+    drawHighlight(activeTarget)
+  }
+
+  /**
+   * Remove the highlight overlay and forget the active target and match list.
    */
   function clearHighlights() {
+    removeHighlightOverlay()
+    activeTarget = null
+    matchList = []
+    matchIndex = 0
+  }
+
+  function removeHighlightOverlay() {
     const container = document.getElementById(XAVIER_HIGHLIGHT_CONTAINER_ID)
     if (container) {
       container.remove()
     }
-
-    activeTarget = null
   }
 
   /**

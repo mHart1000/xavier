@@ -105,9 +105,11 @@ Name an element by its visible text, then act on it (parallel to the hint flow).
 
 | `name`             | `args`                  | Effect                                                                                  |
 |--------------------|-------------------------|-----------------------------------------------------------------------------------------|
-| `highlight_text`   | `{ "text": "sign in" }` | Highlight the element whose visible text matches `text`; set it as the active target.   |
-| `click`            | none                    | Click the active highlighted target, then clear the highlight.                          |
-| `clear_highlights` | none                    | Remove the highlight and clear the active target.                                       |
+| `highlight_text`     | `{ "text": "sign in" }` | Highlight the element whose visible text matches `text`; set it as the active target.   |
+| `highlight_next`     | none                    | Move the highlight to the next element matching the current text (wraps).               |
+| `highlight_previous` | none                    | Move the highlight to the previous element matching the current text (wraps).           |
+| `click`              | none                    | Click the active highlighted target, then clear the highlight.                          |
+| `clear_highlights`   | none                    | Remove the highlight and clear the active target.                                       |
 
 ### Focus
 
