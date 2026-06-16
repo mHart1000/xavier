@@ -48,7 +48,7 @@ class HybridRecognizer(SpeechRecognizer):
         # normalize_transcript() would strip the brackets off "[unk]".
         tokens = vt.text.split()
         if not tokens or all(t == "[unk]" for t in tokens):
-            logger.debug("hybrid: vosk non-match (%r) — rejected", vt.text)
+            logger.info("hybrid: rejected (vosk: %r) — out of grammar", vt.text)
             return Transcript(text="", confidence=0.0)
 
         probe = normalize_transcript(vt.text)
@@ -58,10 +58,10 @@ class HybridRecognizer(SpeechRecognizer):
         if self._whisper_ok and any(
             probe == t or probe.startswith(t + " ") for t in self.triggers
         ):
-            logger.debug("hybrid: trigger in %r — routing to whisper", vt.text)
+            logger.info("hybrid: route=whisper (vosk: %r)", vt.text)
             return self.whisper.transcribe(pcm16)
 
-        logger.debug("hybrid: fast path (vosk) -> %r", vt.text)
+        logger.info("hybrid: route=vosk (%r)", vt.text)
         return vt
 
     def close(self):

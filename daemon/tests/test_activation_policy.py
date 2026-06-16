@@ -66,6 +66,21 @@ def test_non_confirm_cancels_pending_high():
     assert policy.pending_command is None
 
 
+def test_cancel_aborts_pending_high_risk():
+    policy = make_policy()
+    policy.evaluate("close tab", now=0)
+    cmd, reason = policy.evaluate("cancel", now=1)
+    assert cmd is None
+    assert reason == "cancelled"
+    assert policy.pending_command is None
+
+
+def test_cancel_without_pending_emits_command():
+    cmd, reason = make_policy().evaluate("cancel", now=0)
+    assert cmd["name"] == "cancel"
+    assert reason == "ok"
+
+
 def test_confirmation_times_out():
     policy = make_policy()
     policy.evaluate("close tab", now=0)
@@ -96,3 +111,8 @@ def test_risk_tier_classification():
     assert risk_tier("nav_back") == "medium"
     assert risk_tier("tab_close") == "high"
     assert risk_tier("something_unknown") == "medium"
+    assert risk_tier("highlight_text") == "low"
+    assert risk_tier("highlight_next") == "low"
+    assert risk_tier("cancel") == "low"
+    assert risk_tier("click") == "medium"
+    assert risk_tier("open_new_tab") == "medium"

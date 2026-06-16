@@ -46,7 +46,7 @@ PHRASE_COMMANDS = {
     "bottom": "jump_bottom",
     "new tab": "tab_new",
     "open tab": "tab_new",
-    # TODO(phase 7): gate tab_close behind a confirmation phrase per protocol Safety §.
+    # tab_close is gated as HIGH_RISK (spoken confirm) in activation_policy.
     "close tab": "tab_close",
     "next tab": "tab_next",
     "previous tab": "tab_prev",
@@ -54,6 +54,15 @@ PHRASE_COMMANDS = {
     "show hints": "hints_show",
     "hints": "hints_show",
     "hide hints": "hints_hide",
+    "click": "click",
+    "open in new tab": "open_new_tab",
+    "open in a new tab": "open_new_tab",
+    "control click": "open_new_tab",
+    "clear highlight": "clear_highlights",
+    "clear highlights": "clear_highlights",
+    "cancel": "cancel",
+    "next": "highlight_next",
+    "previous": "highlight_previous",
     "focus address": "focus_address",
     "address bar": "focus_address",
     "focus page": "focus_page",
@@ -64,10 +73,15 @@ PHRASE_COMMANDS = {
 # must be in command_grammar() or the Vosk fast path maps them to "[unk]".
 CONFIRM_WORDS = ("confirm", "confirmed")
 
+# Spoken words that abort a pending confirmation (see activation_policy). "cancel"
+# is multipurpose: with no pending command it parses to the cancel command and
+# dismisses transient page state in the extension instead.
+CANCEL_WORDS = ("cancel",)
+
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
-    words = {"click"}  # hint_click prefix isn't in PHRASE_COMMANDS
+    words = {"highlight"}  # highlight_text is trigger-routed, not a PHRASE_COMMANDS entry
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
     return " ".join(sorted(words))
@@ -80,8 +94,9 @@ def command_grammar(wake_phrase=None):
     more accurate. "[unk]" lets out-of-grammar audio map to an unknown token so
     random speech is rejected rather than forced onto a command word.
     """
-    words = {"click", "open", "url"}  # "open"/"url" trigger the Whisper path
+    words = {"click", "open", "url", "highlight"}  # open/url/highlight route to Whisper
     words.update(CONFIRM_WORDS)       # gate the HIGH_RISK confirmation step
+    words.update(CANCEL_WORDS)        # abort a pending confirmation
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
     words.update(string.ascii_lowercase)  # single-letter hint codes (a-z)
@@ -92,7 +107,7 @@ def command_grammar(wake_phrase=None):
 
 def command_triggers():
     """Normalized phrases that route an utterance to the Whisper (accuracy) path."""
-    return ("open url",)
+    return ("open url", "highlight")
 
 
 def parse_command(transcript, confidence=1.0):
@@ -119,6 +134,11 @@ def parse_command(transcript, confidence=1.0):
     if hint_match:
         code = hint_match.group(1).replace(' ', '').upper()
         return _make_command("hint_click", {"code": code}, confidence, raw)
+
+    highlight_match = re.match(r'^highlight (.+)$', normalized)
+    if highlight_match:
+        text = highlight_match.group(1).strip()
+        return _make_command("highlight_text", {"text": text}, confidence, raw)
 
     url_match = re.match(r'^open url (.+)$', normalized)
     if url_match:

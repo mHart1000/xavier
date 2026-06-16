@@ -86,3 +86,12 @@ def test_trigger_falls_back_to_vosk_when_whisper_disabled():
     out = h.transcribe(b"")
     assert h.whisper.calls == 0
     assert out.text == "open url example dot com"
+
+
+def test_highlight_routes_to_whisper():
+    # Vosk can only emit "highlight" + out-of-grammar tokens for the link text,
+    # but that is enough to trigger the Whisper re-transcription.
+    h = make_hybrid("highlight [unk] [unk]", whisper_text="highlight sign in")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 1
+    assert out.text == "highlight sign in"
