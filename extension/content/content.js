@@ -387,52 +387,71 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Ordered clickable elements matching the needle by visible label or class.
+   * Ordered elements matching the needle by visible text or first class name.
+   *
+   * Two pools merged by element (a text score outranks a class score): text
+   * matching uses the clickable set; class matching scans every rendered element
+   * with a class, so it reaches JS-wired controls with no clickable attribute
+   * (e.g. Reddit's <a class="expando-button"> with no href) that the clickable
+   * selectors miss.
    *
    * Keep only innermost matches - drop any candidate that contains another
-   * candidate. A clickable container and a clickable element nested inside it can
-   * both match; if the container is allowed to win it becomes the target, and
-   * proximity measured from a container favors sibling containers over its own
-   * descendants, so a later anchored highlight resolves to the wrong group.
-   * Restricting to innermost matches keeps the target specific.
+   * candidate. A container and an element nested inside it can both match; if the
+   * container is allowed to win it becomes the target, and proximity measured
+   * from a container favors sibling containers over its own descendants, so a
+   * later anchored highlight resolves to the wrong group. Restricting to
+   * innermost matches keeps the target specific.
    *
    * Order: with an anchor (the previously highlighted element), nearest in the
    * DOM tree first. Without one, by match score; ties keep document order (stable
    * sort), so "next" steps top to bottom down the page.
    */
   function findMatches(needle, anchor) {
-    const candidates = collectMatchableElements()
-      .map(el => ({ el, score: matchScore(el, needle) }))
-      .filter(candidate => candidate.score !== null)
+    const byElement = new Map()
 
-    const innermost = candidates.filter(candidate =>
+    // Text matches over the clickable set (scores 0-2).
+    for (const el of collectMatchableElements()) {
+      const score = textScore(el, needle)
+      if (score !== null) {
+        byElement.set(el, score)
+      }
+    }
+
+    // Class matches over any rendered element whose first class equals the needle
+    // (score 3). Checked after text so a text match wins; firstClassName (cheap)
+    // gates the layout-reading isRendered.
+    for (const el of document.querySelectorAll('[class]')) {
+      if (!byElement.has(el) && firstClassName(el) === needle && isRendered(el)) {
+        byElement.set(el, 3)
+      }
+    }
+
+    let candidates = Array.from(byElement, ([el, score]) => ({ el, score }))
+    candidates = candidates.filter(candidate =>
       !candidates.some(other => other.el !== candidate.el && candidate.el.contains(other.el))
     )
 
     if (anchor) {
-      innermost.sort((a, b) =>
+      candidates.sort((a, b) =>
         domDistance(anchor, a.el) - domDistance(anchor, b.el) ||
         a.score - b.score
       )
     } else {
-      innermost.sort((a, b) => a.score - b.score)
+      candidates.sort((a, b) => a.score - b.score)
     }
 
-    return innermost.map(candidate => candidate.el)
+    return candidates.map(candidate => candidate.el)
   }
 
   /**
-   * Match an element against the needle; lower score = better, null = no match.
-   * Visible text is matched as a substring (preferring exact, then prefix); the
-   * first class name must match exactly. Text outranks class, and exact-class
-   * (not substring) avoids a needle like "expand" also hitting "expando-button".
+   * Text-only score for an element's visible label: 0 exact, 1 prefix, 2
+   * substring, null no match. Class matching is handled in findMatches.
    */
-  function matchScore(el, needle) {
+  function textScore(el, needle) {
     const label = normalizeLabel(elementLabel(el))
     if (label === needle) return 0
     if (label.startsWith(needle)) return 1
     if (label.includes(needle)) return 2
-    if (firstClassName(el) === needle) return 3
     return null
   }
 
