@@ -354,9 +354,10 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Text targeting - highlight an element by its visible text. All matches are
-   * kept as an ordered list (the active one is the click target) so
-   * "next"/"previous" can step through repeats of the same text.
+   * Text/class targeting - highlight an element by its visible text or first
+   * class name. All matches are kept as an ordered list (the active one is the
+   * click target) so "next"/"previous" step through repeats; an optional ordinal
+   * arg selects the starting match.
    */
   function highlightText(args) {
     const text = args && args.text
@@ -370,59 +371,78 @@ if (window.__xavierContentLoaded) {
     const anchor = activeTarget
     clearHighlights()
 
-    const matches = findTextMatches(normalizeLabel(text), anchor)
+    const matches = findMatches(normalizeLabel(text), anchor)
 
     if (matches.length === 0) {
       throw new Error(`No element matching text: ${text}`)
     }
 
     matchList = matches
-    matchIndex = 0
+    // "highlight third expand" starts on the Nth match (1-based, clamped).
+    const ordinal = (args && args.ordinal) || 1
+    matchIndex = Math.min(Math.max(ordinal - 1, 0), matchList.length - 1)
     applyMatch()
 
-    console.log(`[Xavier Content] Highlighted 1/${matchList.length} for: ${text}`)
+    console.log(`[Xavier Content] Highlighted ${matchIndex + 1}/${matchList.length} for: ${text}`)
   }
 
   /**
-   * Ordered clickable elements whose visible label contains the needle.
+   * Ordered clickable elements matching the needle by visible label or class.
    *
-   * First keep only innermost matches - drop any candidate that contains another
+   * Keep only innermost matches - drop any candidate that contains another
    * candidate. A clickable container and a clickable element nested inside it can
-   * both match the same text; if the container is allowed to win it becomes the
-   * target, and proximity measured from a container favors sibling containers
-   * over its own descendants, so a later anchored highlight resolves to the
-   * wrong group. Restricting to innermost matches keeps the target specific.
+   * both match; if the container is allowed to win it becomes the target, and
+   * proximity measured from a container favors sibling containers over its own
+   * descendants, so a later anchored highlight resolves to the wrong group.
+   * Restricting to innermost matches keeps the target specific.
    *
    * Order: with an anchor (the previously highlighted element), nearest in the
-   * DOM tree first. Without one, by label rank (exact, then prefix, then
-   * substring); ties keep document order (stable sort), so "next" steps top to
-   * bottom down the page.
+   * DOM tree first. Without one, by match score; ties keep document order (stable
+   * sort), so "next" steps top to bottom down the page.
    */
-  function findTextMatches(needle, anchor) {
+  function findMatches(needle, anchor) {
     const candidates = collectMatchableElements()
-      .map(el => ({ el, label: normalizeLabel(elementLabel(el)) }))
-      .filter(candidate => candidate.label.includes(needle))
+      .map(el => ({ el, score: matchScore(el, needle) }))
+      .filter(candidate => candidate.score !== null)
 
     const innermost = candidates.filter(candidate =>
       !candidates.some(other => other.el !== candidate.el && candidate.el.contains(other.el))
     )
 
-    function rank(label) {
-      if (label === needle) return 0
-      if (label.startsWith(needle)) return 1
-      return 2
-    }
-
     if (anchor) {
       innermost.sort((a, b) =>
         domDistance(anchor, a.el) - domDistance(anchor, b.el) ||
-        rank(a.label) - rank(b.label)
+        a.score - b.score
       )
     } else {
-      innermost.sort((a, b) => rank(a.label) - rank(b.label))
+      innermost.sort((a, b) => a.score - b.score)
     }
 
     return innermost.map(candidate => candidate.el)
+  }
+
+  /**
+   * Match an element against the needle; lower score = better, null = no match.
+   * Visible text is matched as a substring (preferring exact, then prefix); the
+   * first class name must match exactly. Text outranks class, and exact-class
+   * (not substring) avoids a needle like "expand" also hitting "expando-button".
+   */
+  function matchScore(el, needle) {
+    const label = normalizeLabel(elementLabel(el))
+    if (label === needle) return 0
+    if (label.startsWith(needle)) return 1
+    if (label.includes(needle)) return 2
+    if (firstClassName(el) === needle) return 3
+    return null
+  }
+
+  /**
+   * First class name, normalized for speech: lowercased, "-"/"_" to spaces (so a
+   * spoken "flat list" matches class "flat-list"). Empty string if no class.
+   */
+  function firstClassName(el) {
+    const first = (el.classList && el.classList[0]) || ""
+    return normalizeLabel(first.replace(/[-_]/g, " "))
   }
 
   /**

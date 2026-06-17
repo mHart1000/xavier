@@ -78,10 +78,18 @@ CONFIRM_WORDS = ("confirm", "confirmed")
 # dismisses transient page state in the extension instead.
 CANCEL_WORDS = ("cancel",)
 
+# Leading ordinal in "highlight <ordinal> <target>" (e.g. "highlight third expand")
+# selects which match to start on. 1-based; the extension clamps out-of-range.
+ORDINAL_WORDS = {
+    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+    "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
+}
+
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
     words = {"highlight"}  # highlight_text is trigger-routed, not a PHRASE_COMMANDS entry
+    words.update(ORDINAL_WORDS)  # bias "highlight <ordinal> <target>"
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
     return " ".join(sorted(words))
@@ -137,8 +145,11 @@ def parse_command(transcript, confidence=1.0):
 
     highlight_match = re.match(r'^highlight (.+)$', normalized)
     if highlight_match:
-        text = highlight_match.group(1).strip()
-        return _make_command("highlight_text", {"text": text}, confidence, raw)
+        ordinal, text = _split_ordinal(highlight_match.group(1).strip())
+        args = {"text": text}
+        if ordinal is not None:
+            args["ordinal"] = ordinal
+        return _make_command("highlight_text", args, confidence, raw)
 
     url_match = re.match(r'^open url (.+)$', normalized)
     if url_match:
@@ -147,6 +158,25 @@ def parse_command(transcript, confidence=1.0):
 
     logger.warning(f"No command matched for transcript: {raw}")
     return None
+
+
+def _split_ordinal(text):
+    """
+    Split a leading ordinal off a highlight phrase: an ordinal word (first..tenth)
+    or a numeric form (3, 3rd). Returns (ordinal_or_None, rest). Only treats the
+    head as an ordinal when a target follows, so "highlight first" stays a literal
+    "first" match.
+    """
+    tokens = text.split()
+    if len(tokens) < 2:
+        return None, text
+    head, rest = tokens[0], " ".join(tokens[1:])
+    if head in ORDINAL_WORDS:
+        return ORDINAL_WORDS[head], rest
+    digit = re.match(r'^(\d+)(?:st|nd|rd|th)?$', head)
+    if digit:
+        return int(digit.group(1)), rest
+    return None, text
 
 
 def _spoken_to_url(spoken):

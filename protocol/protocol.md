@@ -101,11 +101,11 @@ All commands are sent **daemon → extension** with `type: "command"`.
 
 ### Text Targeting
 
-Name an element by its visible text, then act on it (parallel to the hint flow).
+Name an element by its visible text or first class name, then act on it (parallel to the hint flow).
 
 | `name`             | `args`                  | Effect                                                                                  |
 |--------------------|-------------------------|-----------------------------------------------------------------------------------------|
-| `highlight_text`     | `{ "text": "sign in" }` | Highlight the element whose visible text matches `text`; set it as the active target.   |
+| `highlight_text`     | `{ "text": "expand", "ordinal": 3 }` | Highlight the element matching `text` by visible text (substring) or exact first class name; set it as the active target. Optional `ordinal` (1-based) picks which match to start on; out of range clamps to the last. |
 | `highlight_next`     | none                    | Move the highlight to the next element matching the current text (wraps).               |
 | `highlight_previous` | none                    | Move the highlight to the previous element matching the current text (wraps).           |
 | `click`              | none                    | Click the active highlighted target, then clear the highlight.                          |

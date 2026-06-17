@@ -65,6 +65,30 @@ def test_highlight_without_text_is_no_match():
     assert parse_command("highlight") is None
 
 
+def test_highlight_ordinal_word():
+    cmd = parse_command("highlight third expand")
+    assert cmd["name"] == "highlight_text"
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 3
+
+
+def test_highlight_no_ordinal_omits_arg():
+    assert "ordinal" not in parse_command("highlight expand")["args"]
+
+
+def test_highlight_bare_ordinal_is_literal():
+    # "highlight first" with no following target stays a literal "first" match.
+    cmd = parse_command("highlight first")
+    assert cmd["args"]["text"] == "first"
+    assert "ordinal" not in cmd["args"]
+
+
+def test_highlight_numeric_ordinal():
+    cmd = parse_command("highlight 2nd comment")
+    assert cmd["args"]["ordinal"] == 2
+    assert cmd["args"]["text"] == "comment"
+
+
 def test_clear_highlights_parses():
     assert parse_command("clear highlights")["name"] == "clear_highlights"
 
