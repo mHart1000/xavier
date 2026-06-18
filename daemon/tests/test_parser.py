@@ -65,6 +65,72 @@ def test_highlight_without_text_is_no_match():
     assert parse_command("highlight") is None
 
 
+def test_highlight_ordinal_word():
+    cmd = parse_command("highlight third expand")
+    assert cmd["name"] == "highlight_text"
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 3
+
+
+def test_highlight_no_ordinal_omits_arg():
+    assert "ordinal" not in parse_command("highlight expand")["args"]
+
+
+def test_highlight_bare_ordinal_is_literal():
+    # "highlight first" with no following target stays a literal "first" match.
+    cmd = parse_command("highlight first")
+    assert cmd["args"]["text"] == "first"
+    assert "ordinal" not in cmd["args"]
+
+
+def test_highlight_numeric_ordinal():
+    cmd = parse_command("highlight 2nd comment")
+    assert cmd["args"]["ordinal"] == 2
+    assert cmd["args"]["text"] == "comment"
+
+
+def test_highlight_trailing_cardinal():
+    # "highlight expand three" == "highlight third expand".
+    cmd = parse_command("highlight expand three")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 3
+
+
+def test_highlight_trailing_digit():
+    cmd = parse_command("highlight expand 3")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 3
+
+
+def test_highlight_leading_cardinal_stays_literal():
+    # Cardinals are trailing-only, so a leading "one" is part of the target.
+    cmd = parse_command("highlight one piece")
+    assert cmd["args"]["text"] == "one piece"
+    assert "ordinal" not in cmd["args"]
+
+
+def test_highlight_trailing_homonym_to():
+    # Whisper hears "expand two" as "expand to".
+    cmd = parse_command("highlight expand to")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 2
+    assert cmd["args"]["literal"] == "expand to"
+
+
+def test_highlight_trailing_homonym_for():
+    cmd = parse_command("highlight expand for")
+    assert cmd["args"]["ordinal"] == 4
+    assert cmd["args"]["literal"] == "expand for"
+
+
+def test_highlight_trailing_keeps_literal():
+    assert parse_command("highlight expand three")["args"]["literal"] == "expand three"
+
+
+def test_highlight_leading_ordinal_has_no_literal():
+    assert "literal" not in parse_command("highlight third expand")["args"]
+
+
 def test_clear_highlights_parses():
     assert parse_command("clear highlights")["name"] == "clear_highlights"
 

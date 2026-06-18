@@ -41,9 +41,7 @@ if (window.__xavierContentLoaded) {
     '[tabindex]:not([tabindex="-1"])'
   ]
 
-  // Commands that move the viewport. They invalidate the fixed-position highlight
-  // and hint overlays (they would drift onto arbitrary elements), so transient
-  // state is dismissed before they run.
+  // Viewport-moving commands; dismiss the fixed overlays first so they don't drift.
   const VIEWPORT_MOVING_COMMANDS = new Set([
     "scroll_up", "scroll_down", "page_up", "page_down", "jump_top", "jump_bottom"
   ])
@@ -354,9 +352,10 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Text targeting - highlight an element by its visible text. All matches are
-   * kept as an ordered list (the active one is the click target) so
-   * "next"/"previous" can step through repeats of the same text.
+   * Text/class targeting - highlight an element by its visible text or first
+   * class name. All matches are kept as an ordered list (the active one is the
+   * click target) so "next"/"previous" step through repeats; an optional ordinal
+   * arg selects the starting match.
    */
   function highlightText(args) {
     const text = args && args.text
@@ -365,64 +364,97 @@ if (window.__xavierContentLoaded) {
       throw new Error("Missing required argument: text")
     }
 
-    // Capture the current target before clearing: a follow-up highlight anchors
-    // to it so the nearest match is chosen instead of the global best.
+    // Capture the prior target as an anchor before clearing (nearest-match bias).
     const anchor = activeTarget
     clearHighlights()
 
-    const matches = findTextMatches(normalizeLabel(text), anchor)
+    // Try the full phrase first (a real target ending in a number word wins), else text + position.
+    let matches = []
+    let start = 1
+    if (args.literal) {
+      matches = findMatches(normalizeLabel(args.literal), anchor)
+    }
+    if (matches.length === 0) {
+      matches = findMatches(normalizeLabel(text), anchor)
+      start = (args && args.ordinal) || 1
+    }
 
     if (matches.length === 0) {
       throw new Error(`No element matching text: ${text}`)
     }
 
     matchList = matches
-    matchIndex = 0
+    matchIndex = Math.min(Math.max(start - 1, 0), matchList.length - 1)
     applyMatch()
 
-    console.log(`[Xavier Content] Highlighted 1/${matchList.length} for: ${text}`)
+    console.log(`[Xavier Content] Highlighted ${matchIndex + 1}/${matchList.length} for: ${text}`)
   }
 
   /**
-   * Ordered clickable elements whose visible label contains the needle.
+   * Ordered match list for "highlight" + "next" cycling.
    *
-   * First keep only innermost matches - drop any candidate that contains another
-   * candidate. A clickable container and a clickable element nested inside it can
-   * both match the same text; if the container is allowed to win it becomes the
-   * target, and proximity measured from a container favors sibling containers
-   * over its own descendants, so a later anchored highlight resolves to the
-   * wrong group. Restricting to innermost matches keeps the target specific.
+   * Score (lower = better): a visible-text match (clickable set) beats an exact
+   * first-class match (any rendered [class] element). The class pool reaches
+   * JS-wired controls that have no clickable attribute.
    *
-   * Order: with an anchor (the previously highlighted element), nearest in the
-   * DOM tree first. Without one, by label rank (exact, then prefix, then
-   * substring); ties keep document order (stable sort), so "next" steps top to
-   * bottom down the page.
+   * Then drop any match that contains another match, so a wrapping container
+   * can't win over the specific element inside it. Order by anchor proximity (the
+   * prior highlight) if set, else score then document order.
    */
-  function findTextMatches(needle, anchor) {
-    const candidates = collectMatchableElements()
-      .map(el => ({ el, label: normalizeLabel(elementLabel(el)) }))
-      .filter(candidate => candidate.label.includes(needle))
+  function findMatches(needle, anchor) {
+    const byElement = new Map()
 
-    const innermost = candidates.filter(candidate =>
+    // Text matches over the clickable set (scores 0-2).
+    for (const el of collectMatchableElements()) {
+      const score = textScore(el, needle)
+      if (score !== null) {
+        byElement.set(el, score)
+      }
+    }
+
+    // Class matches (score 3), after text so text wins; cheap firstClassName gates isRendered.
+    for (const el of document.querySelectorAll('[class]')) {
+      if (!byElement.has(el) && firstClassName(el) === needle && isRendered(el)) {
+        byElement.set(el, 3)
+      }
+    }
+
+    let candidates = Array.from(byElement, ([el, score]) => ({ el, score }))
+    candidates = candidates.filter(candidate =>
       !candidates.some(other => other.el !== candidate.el && candidate.el.contains(other.el))
     )
 
-    function rank(label) {
-      if (label === needle) return 0
-      if (label.startsWith(needle)) return 1
-      return 2
-    }
-
     if (anchor) {
-      innermost.sort((a, b) =>
+      candidates.sort((a, b) =>
         domDistance(anchor, a.el) - domDistance(anchor, b.el) ||
-        rank(a.label) - rank(b.label)
+        a.score - b.score
       )
     } else {
-      innermost.sort((a, b) => rank(a.label) - rank(b.label))
+      candidates.sort((a, b) => a.score - b.score)
     }
 
-    return innermost.map(candidate => candidate.el)
+    return candidates.map(candidate => candidate.el)
+  }
+
+  /**
+   * Text-only score for an element's visible label: 0 exact, 1 prefix, 2
+   * substring, null no match. Class matching is handled in findMatches.
+   */
+  function textScore(el, needle) {
+    const label = normalizeLabel(elementLabel(el))
+    if (label === needle) return 0
+    if (label.startsWith(needle)) return 1
+    if (label.includes(needle)) return 2
+    return null
+  }
+
+  /**
+   * First class name, normalized for speech: lowercased, "-"/"_" to spaces (so a
+   * spoken "flat list" matches class "flat-list"). Empty string if no class.
+   */
+  function firstClassName(el) {
+    const first = (el.classList && el.classList[0]) || ""
+    return normalizeLabel(first.replace(/[-_]/g, " "))
   }
 
   /**
