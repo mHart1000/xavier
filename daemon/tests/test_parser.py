@@ -109,6 +109,28 @@ def test_highlight_leading_cardinal_stays_literal():
     assert "ordinal" not in cmd["args"]
 
 
+def test_highlight_trailing_homonym_to():
+    # Whisper hears "expand two" as "expand to".
+    cmd = parse_command("highlight expand to")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 2
+    assert cmd["args"]["literal"] == "expand to"
+
+
+def test_highlight_trailing_homonym_for():
+    cmd = parse_command("highlight expand for")
+    assert cmd["args"]["ordinal"] == 4
+    assert cmd["args"]["literal"] == "expand for"
+
+
+def test_highlight_trailing_keeps_literal():
+    assert parse_command("highlight expand three")["args"]["literal"] == "expand three"
+
+
+def test_highlight_leading_ordinal_has_no_literal():
+    assert "literal" not in parse_command("highlight third expand")["args"]
+
+
 def test_clear_highlights_parses():
     assert parse_command("clear highlights")["name"] == "clear_highlights"
 

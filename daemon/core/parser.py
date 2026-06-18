@@ -69,27 +69,27 @@ PHRASE_COMMANDS = {
     "focus body": "focus_page",
 }
 
-# Spoken words that confirm a HIGH_RISK command (see activation_policy). These
-# must be in command_grammar() or the Vosk fast path maps them to "[unk]".
+# Words that confirm a HIGH_RISK command; must be in command_grammar() (see activation_policy).
 CONFIRM_WORDS = ("confirm", "confirmed")
 
-# Spoken words that abort a pending confirmation (see activation_policy). "cancel"
-# is multipurpose: with no pending command it parses to the cancel command and
-# dismisses transient page state in the extension instead.
+# Words that abort a pending confirmation (see activation_policy).
 CANCEL_WORDS = ("cancel",)
 
-# Leading ordinal in "highlight <ordinal> <target>" (e.g. "highlight third expand")
-# selects which match to start on. 1-based; the extension clamps out-of-range.
+# Leading position words: "highlight <ordinal> <target>" (1-based).
 ORDINAL_WORDS = {
     "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
     "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
 }
 
-# Cardinal numbers, accepted as a trailing position: "highlight expand three"
-# means the same as "highlight third expand".
+# Trailing position words: "highlight expand three" == "highlight third expand".
 CARDINAL_WORDS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
+# Trailing-position homonyms for numbers Whisper mis-hears ("two" -> "to").
+NUMBER_HOMONYMS = {
+    "won": 1, "to": 2, "too": 2, "for": 4, "fore": 4, "ate": 8,
 }
 
 
@@ -153,10 +153,14 @@ def parse_command(transcript, confidence=1.0):
 
     highlight_match = re.match(r'^highlight (.+)$', normalized)
     if highlight_match:
-        ordinal, text = _split_position(highlight_match.group(1).strip())
+        inner = highlight_match.group(1).strip()
+        ordinal, text, source = _split_position(inner)
         args = {"text": text}
         if ordinal is not None:
             args["ordinal"] = ordinal
+            if source == "trail":
+                # Keep the full phrase: the trailing number may have been a real word.
+                args["literal"] = inner
         return _make_command("highlight_text", args, confidence, raw)
 
     url_match = re.match(r'^open url (.+)$', normalized)
@@ -176,33 +180,35 @@ def _numeric_token(token):
 
 def _split_position(text):
     """
-    Pull a 1-based position out of a highlight phrase, returning (pos_or_None,
-    rest). Two spoken forms:
-      - leading ordinal: "third expand" / "3 expand"
-      - trailing number: "expand three" / "expand third" / "expand 3"
+    Pull a 1-based position out of a highlight phrase, returning
+    (pos_or_None, rest, source) where source is "lead", "trail", or None:
+      - leading ordinal: "third expand" / "3 expand"            -> "lead"
+      - trailing number: "expand three" / "expand 3" / "expand to" -> "trail"
     A target must remain on the other side, so "highlight first" / "highlight
-    three" stay literal. Cardinals ("three") are read only as a trailing position,
-    not a leading one, so a target like "one piece" is left intact.
+    three" stay literal. Cardinals and homonyms are read only as a trailing
+    position, not a leading one, so a target like "one piece" is left intact.
     """
     tokens = text.split()
     if len(tokens) < 2:
-        return None, text
+        return None, text, None
 
     head = tokens[0]
     lead = ORDINAL_WORDS.get(head)
     if lead is None:
         lead = _numeric_token(head)
     if lead is not None:
-        return lead, " ".join(tokens[1:])
+        return lead, " ".join(tokens[1:]), "lead"
 
     tail_token = tokens[-1]
-    tail = ORDINAL_WORDS.get(tail_token) or CARDINAL_WORDS.get(tail_token)
+    tail = (ORDINAL_WORDS.get(tail_token)
+            or CARDINAL_WORDS.get(tail_token)
+            or NUMBER_HOMONYMS.get(tail_token))
     if tail is None:
         tail = _numeric_token(tail_token)
     if tail is not None:
-        return tail, " ".join(tokens[:-1])
+        return tail, " ".join(tokens[:-1]), "trail"
 
-    return None, text
+    return None, text, None
 
 
 def _spoken_to_url(spoken):

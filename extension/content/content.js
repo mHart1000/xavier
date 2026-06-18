@@ -41,9 +41,7 @@ if (window.__xavierContentLoaded) {
     '[tabindex]:not([tabindex="-1"])'
   ]
 
-  // Commands that move the viewport. They invalidate the fixed-position highlight
-  // and hint overlays (they would drift onto arbitrary elements), so transient
-  // state is dismissed before they run.
+  // Viewport-moving commands; dismiss the fixed overlays first so they don't drift.
   const VIEWPORT_MOVING_COMMANDS = new Set([
     "scroll_up", "scroll_down", "page_up", "page_down", "jump_top", "jump_bottom"
   ])
@@ -366,45 +364,42 @@ if (window.__xavierContentLoaded) {
       throw new Error("Missing required argument: text")
     }
 
-    // Capture the current target before clearing: a follow-up highlight anchors
-    // to it so the nearest match is chosen instead of the global best.
+    // Capture the prior target as an anchor before clearing (nearest-match bias).
     const anchor = activeTarget
     clearHighlights()
 
-    const matches = findMatches(normalizeLabel(text), anchor)
+    // Try the full phrase first (a real target ending in a number word wins), else text + position.
+    let matches = []
+    let start = 1
+    if (args.literal) {
+      matches = findMatches(normalizeLabel(args.literal), anchor)
+    }
+    if (matches.length === 0) {
+      matches = findMatches(normalizeLabel(text), anchor)
+      start = (args && args.ordinal) || 1
+    }
 
     if (matches.length === 0) {
       throw new Error(`No element matching text: ${text}`)
     }
 
     matchList = matches
-    // "highlight third expand" starts on the Nth match (1-based, clamped).
-    const ordinal = (args && args.ordinal) || 1
-    matchIndex = Math.min(Math.max(ordinal - 1, 0), matchList.length - 1)
+    matchIndex = Math.min(Math.max(start - 1, 0), matchList.length - 1)
     applyMatch()
 
     console.log(`[Xavier Content] Highlighted ${matchIndex + 1}/${matchList.length} for: ${text}`)
   }
 
   /**
-   * Ordered elements matching the needle by visible text or first class name.
+   * Ordered match list for "highlight" + "next" cycling.
    *
-   * Two pools merged by element (a text score outranks a class score): text
-   * matching uses the clickable set; class matching scans every rendered element
-   * with a class, so it reaches JS-wired controls with no clickable attribute
-   * (e.g. Reddit's <a class="expando-button"> with no href) that the clickable
-   * selectors miss.
+   * Score (lower = better): a visible-text match (clickable set) beats an exact
+   * first-class match (any rendered [class] element). The class pool reaches
+   * JS-wired controls that have no clickable attribute.
    *
-   * Keep only innermost matches - drop any candidate that contains another
-   * candidate. A container and an element nested inside it can both match; if the
-   * container is allowed to win it becomes the target, and proximity measured
-   * from a container favors sibling containers over its own descendants, so a
-   * later anchored highlight resolves to the wrong group. Restricting to
-   * innermost matches keeps the target specific.
-   *
-   * Order: with an anchor (the previously highlighted element), nearest in the
-   * DOM tree first. Without one, by match score; ties keep document order (stable
-   * sort), so "next" steps top to bottom down the page.
+   * Then drop any match that contains another match, so a wrapping container
+   * can't win over the specific element inside it. Order by anchor proximity (the
+   * prior highlight) if set, else score then document order.
    */
   function findMatches(needle, anchor) {
     const byElement = new Map()
@@ -417,9 +412,7 @@ if (window.__xavierContentLoaded) {
       }
     }
 
-    // Class matches over any rendered element whose first class equals the needle
-    // (score 3). Checked after text so a text match wins; firstClassName (cheap)
-    // gates the layout-reading isRendered.
+    // Class matches (score 3), after text so text wins; cheap firstClassName gates isRendered.
     for (const el of document.querySelectorAll('[class]')) {
       if (!byElement.has(el) && firstClassName(el) === needle && isRendered(el)) {
         byElement.set(el, 3)
