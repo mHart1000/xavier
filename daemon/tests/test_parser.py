@@ -89,6 +89,26 @@ def test_highlight_numeric_ordinal():
     assert cmd["args"]["text"] == "comment"
 
 
+def test_highlight_trailing_cardinal():
+    # "highlight expand three" == "highlight third expand".
+    cmd = parse_command("highlight expand three")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 3
+
+
+def test_highlight_trailing_digit():
+    cmd = parse_command("highlight expand 3")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 3
+
+
+def test_highlight_leading_cardinal_stays_literal():
+    # Cardinals are trailing-only, so a leading "one" is part of the target.
+    cmd = parse_command("highlight one piece")
+    assert cmd["args"]["text"] == "one piece"
+    assert "ordinal" not in cmd["args"]
+
+
 def test_clear_highlights_parses():
     assert parse_command("clear highlights")["name"] == "clear_highlights"
 

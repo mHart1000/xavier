@@ -30,7 +30,7 @@
     "wake_phrase": "browser",
     "session_timeout_seconds": 300,
     "pre_roll_ms": 500,
-    "min_speech_ms": 300,
+    "min_speech_ms": 150,
     "end_silence_ms": 400,
     "max_segment_seconds": 8
   },

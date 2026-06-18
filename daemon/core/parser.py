@@ -85,11 +85,19 @@ ORDINAL_WORDS = {
     "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
 }
 
+# Cardinal numbers, accepted as a trailing position: "highlight expand three"
+# means the same as "highlight third expand".
+CARDINAL_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
     words = {"highlight"}  # highlight_text is trigger-routed, not a PHRASE_COMMANDS entry
-    words.update(ORDINAL_WORDS)  # bias "highlight <ordinal> <target>"
+    words.update(ORDINAL_WORDS)   # bias "highlight <ordinal> <target>"
+    words.update(CARDINAL_WORDS)  # bias "highlight <target> <number>"
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
     return " ".join(sorted(words))
@@ -145,7 +153,7 @@ def parse_command(transcript, confidence=1.0):
 
     highlight_match = re.match(r'^highlight (.+)$', normalized)
     if highlight_match:
-        ordinal, text = _split_ordinal(highlight_match.group(1).strip())
+        ordinal, text = _split_position(highlight_match.group(1).strip())
         args = {"text": text}
         if ordinal is not None:
             args["ordinal"] = ordinal
@@ -160,22 +168,40 @@ def parse_command(transcript, confidence=1.0):
     return None
 
 
-def _split_ordinal(text):
+def _numeric_token(token):
+    """Token -> int for a bare digit, optionally with an ordinal suffix (3, 3rd)."""
+    match = re.match(r'^(\d+)(?:st|nd|rd|th)?$', token)
+    return int(match.group(1)) if match else None
+
+
+def _split_position(text):
     """
-    Split a leading ordinal off a highlight phrase: an ordinal word (first..tenth)
-    or a numeric form (3, 3rd). Returns (ordinal_or_None, rest). Only treats the
-    head as an ordinal when a target follows, so "highlight first" stays a literal
-    "first" match.
+    Pull a 1-based position out of a highlight phrase, returning (pos_or_None,
+    rest). Two spoken forms:
+      - leading ordinal: "third expand" / "3 expand"
+      - trailing number: "expand three" / "expand third" / "expand 3"
+    A target must remain on the other side, so "highlight first" / "highlight
+    three" stay literal. Cardinals ("three") are read only as a trailing position,
+    not a leading one, so a target like "one piece" is left intact.
     """
     tokens = text.split()
     if len(tokens) < 2:
         return None, text
-    head, rest = tokens[0], " ".join(tokens[1:])
-    if head in ORDINAL_WORDS:
-        return ORDINAL_WORDS[head], rest
-    digit = re.match(r'^(\d+)(?:st|nd|rd|th)?$', head)
-    if digit:
-        return int(digit.group(1)), rest
+
+    head = tokens[0]
+    lead = ORDINAL_WORDS.get(head)
+    if lead is None:
+        lead = _numeric_token(head)
+    if lead is not None:
+        return lead, " ".join(tokens[1:])
+
+    tail_token = tokens[-1]
+    tail = ORDINAL_WORDS.get(tail_token) or CARDINAL_WORDS.get(tail_token)
+    if tail is None:
+        tail = _numeric_token(tail_token)
+    if tail is not None:
+        return tail, " ".join(tokens[:-1])
+
     return None, text
 
 
