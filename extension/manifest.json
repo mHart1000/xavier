@@ -30,8 +30,17 @@
     }
   ],
 
+  "icons": {
+    "48": "icons/yoga-dark.png",
+    "96": "icons/yoga-dark.png"
+  },
+
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Xavier Voice Control"
+    "default_title": "Xavier Voice Control",
+    "theme_icons": [
+      { "light": "icons/yoga-light.png", "dark": "icons/yoga-dark.png", "size": 16 },
+      { "light": "icons/yoga-light.png", "dark": "icons/yoga-dark.png", "size": 32 }
+    ]
   }
 }
