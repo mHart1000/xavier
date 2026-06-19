@@ -100,11 +100,28 @@ def handle_ping(message, logger):
     reply_ack(msg_id)
 
 
+def handle_set_listening(message, logger):
+    # Power toggle from the popup: pause releases the mic, resume reopens it.
+    if _listener is None or not _listener_started:
+        logger.info("set_listening received before listener started; ignoring")
+        return
+    enabled = bool((message.get("args") or {}).get("enabled", True))
+    try:
+        if enabled:
+            _listener.resume()
+        else:
+            _listener.pause()
+    except Exception:
+        logger.exception("Failed to apply set_listening (enabled=%s)", enabled)
+    reply_ack(message.get("id"))
+
+
 HANDLERS = {
     "ready": handle_ready,
     "ack": handle_ack,
     "error": handle_error,
     "ping": handle_ping,
+    "set_listening": handle_set_listening,
 }
 
 

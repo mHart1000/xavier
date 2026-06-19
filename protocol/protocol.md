@@ -26,7 +26,7 @@ All messages share this structure:
 
 ```json
 {
-  "type": "command" | "ready" | "ack" | "error" | "ping",
+  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening",
   "id": "string",
   "name": "command_name",
   "args": { },
@@ -132,6 +132,28 @@ Name an element by its visible text or first class name, then act on it (paralle
 | `cancel` | none   | Dismiss the current transient page state: clears the highlight and hides the hint overlay. Multipurpose — teardown for new transient features is added here over time. |
 
 > Spoken "cancel" is also handled by the daemon to abort a pending high-risk confirmation; in that case it is consumed there and no `cancel` command is sent.
+
+---
+
+## Control Messages (extension → daemon)
+
+Sent **extension → daemon** to control the daemon itself rather than act on a
+page. Additive to v1.0: a daemon that predates a control message ignores it.
+
+| `type`          | fields                       | Effect                                                                                                  |
+|-----------------|------------------------------|---------------------------------------------------------------------------------------------------------|
+| `set_listening` | `args: { "enabled": bool }`  | Resume (`true`) or pause (`false`) the speech pipeline. Pausing **releases the microphone**; STT/VAD models stay loaded so resuming is fast. |
+
+The daemon replies with `ack` carrying the same `id`. Toggling is idempotent —
+resuming while already listening (or pausing while already paused) is a no-op.
+
+```json
+{
+  "type": "set_listening",
+  "id": "1718712000000",
+  "args": { "enabled": false }
+}
+```
 
 ---
 

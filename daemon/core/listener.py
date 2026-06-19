@@ -35,10 +35,9 @@ class Listener:
         self._stop = threading.Event()
 
     def start(self):
-        audio_cfg = self.config["audio"]
-        vad_cfg = self.config["vad"]
         listener_cfg = self.config["listener"]
-        sample_rate = audio_cfg["sample_rate"]
+        vad_cfg = self.config["vad"]
+        sample_rate = self.config["audio"]["sample_rate"]
 
         # Build policy first so a bad listener mode fails before loading models.
         self.policy = ActivationPolicy(listener_cfg, self.config["safety"])
@@ -49,6 +48,20 @@ class Listener:
 
         self.vad = SileroVad(vad_cfg["model_path"], sample_rate, vad_cfg["threshold"])
         self.vad.load()
+
+        # Models load once; the mic + worker thread are cycled by pause()/resume()
+        # without paying for a reload.
+        self._start_capture()
+        logger.info("Listener started (mode=%s)", listener_cfg["mode"])
+
+    def _start_capture(self):
+        """Open the mic and spawn the worker thread, reusing loaded models.
+        Shared by start() and resume()."""
+        audio_cfg = self.config["audio"]
+        listener_cfg = self.config["listener"]
+        sample_rate = audio_cfg["sample_rate"]
+
+        self._stop.clear()
 
         self.segmenter = Segmenter(
             sample_rate=sample_rate,
@@ -71,7 +84,6 @@ class Listener:
 
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
-        logger.info("Listener started (mode=%s)", listener_cfg["mode"])
 
     def _run(self):
         threshold = self.config["vad"]["threshold"]
@@ -115,12 +127,29 @@ class Listener:
             else:
                 logger.info("transcript=%r rejected: %s", transcript.text, reason)
 
-    def stop(self):
+    def pause(self):
+        """Release the mic and stop the worker thread, keeping models loaded so
+        resume() is cheap. Safe to call when already paused."""
         self._stop.set()
         if self.audio is not None:
             self.audio.stop()
+            self.audio = None
         if self.thread is not None:
             self.thread.join(timeout=2)
+            self.thread = None
+        logger.info("Listener paused (mic released)")
+
+    def resume(self):
+        """Reopen the mic and restart the worker thread. No-op if already running."""
+        if self.thread is not None and self.thread.is_alive():
+            return
+        self.vad.reset()
+        self._start_capture()
+        logger.info("Listener resumed")
+
+    def stop(self):
+        self.pause()
         if self.recognizer is not None:
             self.recognizer.close()
+            self.recognizer = None
         logger.info("Listener stopped")

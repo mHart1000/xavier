@@ -12,6 +12,11 @@ const NATIVE_HOST_NAME = "com.xavier.voice_browser"
 
 let nativePort = null
 
+// Whether the daemon should be listening. In-memory for the session; the open
+// native port keeps this background script alive, and we re-assert it on every
+// (re)connect so an "off" choice survives a daemon restart (which defaults on).
+let listening = true
+
 /**
  * Initialize native messaging connection
  */
@@ -34,6 +39,7 @@ function connectNativeHost() {
     console.log("[Xavier] Connected to native host")
 
     sendReady()
+    pushListeningState()
   } catch (error) {
     console.error("[Xavier] Failed to connect to native host:", error)
   }
@@ -277,6 +283,20 @@ async function injectContentScript(tab) {
   })
 }
 
+/**
+ * Tell the daemon whether to listen. Idempotent on the daemon side, so it is
+ * safe to re-assert after every connect.
+ */
+function pushListeningState() {
+  if (!nativePort) return
+
+  nativePort.postMessage({
+    type: "set_listening",
+    id: String(Date.now()),
+    args: { enabled: listening }
+  })
+}
+
 function sendReady() {
   if (!nativePort) return
 
@@ -318,19 +338,39 @@ function sendError(id, code, message) {
 }
 
 /**
- * Content scripts ask the background to open a link in a new background tab
- * (the ctrl-click equivalent: new tab, focus stays on the current tab). The
- * content script owns which element is highlighted; the background owns tabs.
+ * Runtime messages from the rest of the extension:
+ * - content scripts ask to open a link in a new background tab (the ctrl-click
+ *   equivalent: new tab, focus stays put). The content script owns which
+ *   element is highlighted; the background owns tabs.
+ * - the popup reads and toggles the listening state.
+ * State queries return a Promise so the popup receives the reply.
  */
 browser.runtime.onMessage.addListener((message, sender) => {
-  if (message && message.type === "open_tab") {
+  if (!message) return
+
+  if (message.type === "open_tab") {
     browser.tabs.create({
       url: message.url,
       active: false,
       openerTabId: sender.tab && sender.tab.id
     }).catch(error => console.error("[Xavier] open_tab failed:", error))
+    return
+  }
+
+  if (message.type === "get_listening_state") {
+    return Promise.resolve(listeningState())
+  }
+
+  if (message.type === "set_listening") {
+    listening = Boolean(message.enabled)
+    pushListeningState()
+    return Promise.resolve(listeningState())
   }
 })
+
+function listeningState() {
+  return { listening, connected: nativePort !== null }
+}
 
 // Initialize on startup
 connectNativeHost()

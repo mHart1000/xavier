@@ -7,8 +7,13 @@ Privacy-first voice control extension for Firefox, communicating with a local da
 - `manifest.json` - Extension manifest with permissions and configuration
 - `background/background.js` - Background script handling native messaging and browser actions
 - `content/content.js` - Content script executing page-level actions and hint overlays
+- `popup/` - Toolbar popup with the on/off power button
 
 ## Features 
+
+### Power Toggle
+- Toolbar popup with a power button to turn voice control on/off
+- Off releases the microphone (the daemon stops listening)
 
 ### Navigation
 - Back, forward, reload
