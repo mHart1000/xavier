@@ -28,5 +28,10 @@
       "js": ["content/content.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Xavier Voice Control"
+  }
 }
