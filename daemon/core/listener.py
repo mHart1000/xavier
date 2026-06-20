@@ -11,6 +11,7 @@ released when Firefox closes the Native Messaging port.
 
 import logging
 import threading
+import time
 
 from audio.input import AudioInput
 from audio.segmenter import Segmenter
@@ -98,6 +99,15 @@ class Listener:
             is_speech = prob >= threshold
             frame_count += 1
 
+            # Input mode: hold it open while speech continues, auto-exit on silence.
+            if self.policy.in_input_mode:
+                now = time.monotonic()
+                if is_speech:
+                    self.policy.refresh_input_activity(now)
+                elif self.policy.input_expired(now):
+                    self.policy.exit_input_mode()
+                    logger.info("input mode ended (%ss silence)", self.policy.input_silence_timeout)
+
             # Heartbeat every ~10 s so the user knows the pipeline is alive.
             if frame_count % 313 == 0:
                 logger.debug("pipeline tick (vad=%.3f, threshold=%.2f)", prob, threshold)
@@ -114,7 +124,7 @@ class Listener:
             duration_ms = len(utterance) // 2 / sample_rate * 1000
             logger.info("utterance collected (%.0f ms) — transcribing…", duration_ms)
             self.vad.reset()
-            transcript = self.recognizer.transcribe(utterance)
+            transcript = self.recognizer.transcribe(utterance, accurate=self.policy.in_input_mode)
             if not transcript.text:
                 logger.info("empty transcript (utterance %.0f ms)", duration_ms)
                 continue

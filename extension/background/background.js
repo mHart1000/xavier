@@ -133,6 +133,7 @@ async function handleCommand(message) {
       case "clear_highlights":
       case "cancel":
       case "focus_page":
+      case "input_text":
         await forwardToContentScript(name, args)
         break
 

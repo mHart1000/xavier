@@ -116,3 +116,76 @@ def test_risk_tier_classification():
     assert risk_tier("cancel") == "low"
     assert risk_tier("click") == "medium"
     assert risk_tier("open_new_tab") == "medium"
+    assert risk_tier("input_text") == "low"
+
+
+def test_input_enters_mode():
+    policy = make_policy()
+    cmd, reason = policy.evaluate("input", now=0)
+    assert cmd is None
+    assert reason == "input_start"
+    assert policy.in_input_mode is True
+
+
+def test_input_same_breath_payload_is_typed():
+    policy = make_policy()
+    cmd, reason = policy.evaluate("input buy some milk", now=0)
+    assert reason == "input_start"
+    assert cmd["name"] == "input_text"
+    assert cmd["args"]["text"] == "buy some milk"
+    assert policy.in_input_mode is True
+
+
+def test_input_dictation_preserves_casing_and_punctuation():
+    policy = make_policy()
+    policy.evaluate("input", now=0)
+    cmd, reason = policy.evaluate("Don't forget the milk.", now=1)
+    assert reason == "input"
+    assert cmd["name"] == "input_text"
+    assert cmd["args"]["text"] == "Don't forget the milk."
+
+
+def test_input_mode_suppresses_commands():
+    # In input mode a command phrase is dictated verbatim, not executed.
+    policy = make_policy()
+    policy.evaluate("input", now=0)
+    cmd, reason = policy.evaluate("scroll down", now=1)
+    assert reason == "input"
+    assert cmd["name"] == "input_text"
+    assert cmd["args"]["text"] == "scroll down"
+
+
+def test_end_input_exits_mode():
+    policy = make_policy()
+    policy.evaluate("input", now=0)
+    cmd, reason = policy.evaluate("end input", now=1)
+    assert cmd is None
+    assert reason == "input_end"
+    assert policy.in_input_mode is False
+
+
+def test_wake_then_input_enters_mode():
+    policy = make_policy()
+    cmd, reason = policy.evaluate("browser input", now=0)
+    assert reason == "input_start"
+    assert cmd is None  # wake + bare trigger, nothing to type yet
+    assert policy.in_input_mode is True
+
+
+def test_wake_then_input_with_payload():
+    policy = make_policy()
+    cmd, reason = policy.evaluate("browser input hello there", now=0)
+    assert reason == "input_start"
+    assert cmd["args"]["text"] == "hello there"
+
+
+def test_input_silence_timeout_and_refresh():
+    policy = make_policy()  # default input_silence_timeout = 5
+    policy.evaluate("input", now=0)            # deadline = 5
+    assert policy.input_expired(4) is False
+    policy.refresh_input_activity(4)            # still speaking: deadline = 9
+    assert policy.input_expired(5) is False
+    assert policy.input_expired(9) is True
+    assert policy.exit_input_mode() is True
+    assert policy.in_input_mode is False
+    assert policy.input_expired(20) is False    # no longer in mode

@@ -95,3 +95,19 @@ def test_highlight_routes_to_whisper():
     out = h.transcribe(b"")
     assert h.whisper.calls == 1
     assert out.text == "highlight sign in"
+
+
+def test_accurate_forces_whisper_and_skips_vosk():
+    # Input mode dictation: bypass the grammar gate and go straight to Whisper.
+    h = make_hybrid("ignored", whisper_text="Don't forget the milk.")
+    out = h.transcribe(b"", accurate=True)
+    assert h.whisper.calls == 1
+    assert h.vosk.calls == 0
+    assert out.text == "Don't forget the milk."
+
+
+def test_accurate_falls_back_to_vosk_when_whisper_disabled():
+    h = make_hybrid("scroll down", whisper_ok=False)
+    out = h.transcribe(b"", accurate=True)
+    assert h.whisper.calls == 0
+    assert out.text == "scroll down"

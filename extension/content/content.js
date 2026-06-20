@@ -46,6 +46,11 @@ if (window.__xavierContentLoaded) {
     "scroll_up", "scroll_down", "page_up", "page_down", "jump_top", "jump_bottom"
   ])
 
+  // <input> types that accept dictated text (input mode).
+  const TEXT_INPUT_TYPES = new Set([
+    "text", "search", "email", "url", "password", "tel", "number"
+  ])
+
   let hintElements = []
   let hintMap = new Map()
   let activeTarget = null
@@ -134,6 +139,10 @@ if (window.__xavierContentLoaded) {
           focusPage()
           break
 
+        case "input_text":
+          inputText(args)
+          break
+
         default:
           console.warn("[Xavier Content] Unknown command:", command)
           sendResponse({ error: "Unknown command" })
@@ -174,6 +183,73 @@ if (window.__xavierContentLoaded) {
       document.activeElement.blur()
     }
     document.body.focus()
+  }
+
+  /**
+   * Type dictated text into the focused editable element (input mode). Inserts at
+   * the caret with execCommand("insertText"), which fires the native input events
+   * that framework-controlled fields (React/Vue) listen for — a plain value
+   * assignment would be ignored. Falls back to setRangeText where execCommand is
+   * unavailable. Assumes the user's field is still focused; forwarding the command
+   * via tabs.sendMessage does not move page focus.
+   */
+  function inputText(args) {
+    const text = args && args.text
+
+    if (!text) {
+      throw new Error("Missing required argument: text")
+    }
+
+    const el = document.activeElement
+    if (!isEditableTarget(el)) {
+      throw new Error("No editable field focused")
+    }
+
+    // Space-separate successive utterances so they don't run together.
+    const insert = needsLeadingSpace(el) ? " " + text : text
+
+    el.focus()
+    if (document.execCommand("insertText", false, insert)) {
+      return
+    }
+
+    // Fallback: splice at the caret (input/textarea) or append (contenteditable).
+    if (typeof el.setRangeText === "function" && el.selectionStart != null) {
+      el.setRangeText(insert, el.selectionStart, el.selectionEnd, "end")
+    } else {
+      el.textContent = (el.textContent || "") + insert
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }))
+  }
+
+  /**
+   * True for a text-bearing <input>, a <textarea>, or a contenteditable element.
+   */
+  function isEditableTarget(el) {
+    if (!el) return false
+    if (el.isContentEditable) return true
+
+    const tag = el.tagName && el.tagName.toLowerCase()
+    if (tag === "textarea") return true
+    if (tag === "input") {
+      // type defaults to "text"; exclude checkbox/button/etc.
+      return TEXT_INPUT_TYPES.has((el.getAttribute("type") || "text").toLowerCase())
+    }
+    return false
+  }
+
+  /**
+   * Whether to prepend a space so consecutive dictated utterances stay separated:
+   * true when text precedes the caret and doesn't already end in whitespace.
+   */
+  function needsLeadingSpace(el) {
+    if (el.isContentEditable) {
+      const existing = el.textContent || ""
+      return existing.length > 0 && !/\s$/.test(existing)
+    }
+    const caret = el.selectionStart
+    if (caret == null || caret === 0) return false
+    return !/\s/.test(el.value.charAt(caret - 1))
   }
 
   /**

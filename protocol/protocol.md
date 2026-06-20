@@ -119,6 +119,17 @@ Name an element by its visible text or first class name, then act on it (paralle
 | `focus_address`  | none   | Focus the URL bar. May require an extra user gesture in some contexts.      |
 | `focus_page`     | none   | Return keyboard focus to the page body. Required before `scroll_*` if the URL bar was previously focused. |
 
+### Input
+
+| `name`       | `args`                | Effect                                                                                                                                                                                          |
+|--------------|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `input_text` | `{ "text": "..." }`   | Type `text` into the currently focused editable element (text `<input>`, `<textarea>`, or contenteditable), inserted at the caret. Casing/punctuation are preserved. Errors if none is focused. |
+
+Sent while the daemon is in **input mode**, which the user enters by saying
+"input" and leaves by saying "end input" or after a few seconds of silence. Each
+dictated utterance arrives as its own `input_text` command; the extension is
+stateless here and simply types what it receives.
+
 ### URL (optional MVP)
 
 | `name`     | `args`                        | Effect                                  |
@@ -210,6 +221,7 @@ Defined error codes:
 | `NO_HINTS_VISIBLE`  | `hint_click` called while hints are not displayed.       |
 | `TEXT_NOT_FOUND`    | `highlight_text` matched no visible element.             |
 | `NO_ACTIVE_TARGET`  | `click` called with no highlighted target.               |
+| `NO_EDITABLE_TARGET`| `input_text` called with no editable element focused.    |
 | `EXECUTION_FAILED`  | The command was valid but the browser action failed.     |
 
 ### `ping` (bidirectional)

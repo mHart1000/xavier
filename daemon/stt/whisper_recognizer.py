@@ -36,7 +36,8 @@ class WhisperRecognizer(SpeechRecognizer):
         )
         logger.info("faster-whisper model loaded")
 
-    def transcribe(self, pcm16):
+    def transcribe(self, pcm16, accurate=False):
+        # Already the accuracy path; `accurate` is accepted for a uniform interface.
         if self.model is None:
             return Transcript(text="", confidence=0.0)
 

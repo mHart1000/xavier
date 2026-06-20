@@ -40,7 +40,14 @@ class HybridRecognizer(SpeechRecognizer):
         except Exception as e:
             logger.warning("Whisper accuracy path disabled (%s); fixed commands still work", e)
 
-    def transcribe(self, pcm16):
+    def transcribe(self, pcm16, accurate=False):
+        # Input mode forces the accuracy path: skip Vosk's grammar gate and trigger
+        # routing and transcribe the whole utterance with Whisper. Silero VAD has
+        # already gated to real speech upstream, so the reject step isn't needed.
+        if accurate and self._whisper_ok:
+            logger.info("hybrid: route=whisper (forced accurate)")
+            return self.whisper.transcribe(pcm16)
+
         vt = self.vosk.transcribe(pcm16)
 
         # Reject out-of-grammar audio (empty or only unknown tokens) so the
