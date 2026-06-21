@@ -57,6 +57,7 @@ if (window.__xavierContentLoaded) {
   let activeTarget = null
   let matchList = []
   let matchIndex = 0
+  let inputModeActive = false
 
   /**
    * Listen for commands from background script
@@ -145,10 +146,12 @@ if (window.__xavierContentLoaded) {
           break
 
         case "input_mode_on":
+          inputModeActive = true
           showInputIndicator()
           break
 
         case "input_mode_off":
+          inputModeActive = false
           hideInputIndicator()
           break
 
@@ -164,6 +167,16 @@ if (window.__xavierContentLoaded) {
       sendResponse({ error: error.message })
     }
   })
+
+  // Numpad "+" exits input mode. Capture phase + preventDefault swallows the "+"
+  // so it isn't typed into the focused field.
+  window.addEventListener("keydown", (event) => {
+    if (inputModeActive && event.code === "NumpadAdd") {
+      event.preventDefault()
+      event.stopPropagation()
+      browser.runtime.sendMessage({ type: "exit_input_mode" }).catch(() => {})
+    }
+  }, true)
 
   /**
    * Scroll Commands
@@ -269,7 +282,7 @@ if (window.__xavierContentLoaded) {
 
     const badge = document.createElement("div")
     badge.id = XAVIER_INPUT_INDICATOR_ID
-    badge.textContent = '● Input mode — say "end input" to finish'
+    badge.textContent = '● Input mode — say "end input" or press +'
     badge.style.cssText = `
       position: fixed;
       bottom: 16px;

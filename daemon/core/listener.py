@@ -175,6 +175,12 @@ class Listener:
         self._start_capture()
         logger.info("Listener resumed")
 
+    def exit_input_mode(self):
+        """External request to leave input mode (e.g. the extension's exit hotkey).
+        The worker loop emits the 'end' status on its next tick."""
+        if self.policy is not None:
+            self.policy.exit_input_mode()
+
     def stop(self):
         self.pause()
         if self.recognizer is not None:

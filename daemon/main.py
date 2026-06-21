@@ -122,12 +122,22 @@ def handle_set_listening(message, logger):
     reply_ack(message.get("id"))
 
 
+def handle_exit_input_mode(message, logger):
+    # Exit dictation mode on request (e.g. the Numpad "+" hotkey).
+    if _listener is None or not _listener_started:
+        logger.info("exit_input_mode received before listener started; ignoring")
+        return
+    _listener.exit_input_mode()
+    reply_ack(message.get("id"))
+
+
 HANDLERS = {
     "ready": handle_ready,
     "ack": handle_ack,
     "error": handle_error,
     "ping": handle_ping,
     "set_listening": handle_set_listening,
+    "exit_input_mode": handle_exit_input_mode,
 }
 
 

@@ -26,7 +26,7 @@ All messages share this structure:
 
 ```json
 {
-  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening" | "input_mode",
+  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening" | "exit_input_mode" | "input_mode",
   "id": "string",
   "name": "command_name",
   "args": { },
@@ -154,6 +154,7 @@ page. Additive to v1.0: a daemon that predates a control message ignores it.
 | `type`          | fields                       | Effect                                                                                                  |
 |-----------------|------------------------------|---------------------------------------------------------------------------------------------------------|
 | `set_listening` | `args: { "enabled": bool }`  | Resume (`true`) or pause (`false`) the speech pipeline. Pausing **releases the microphone**; STT/VAD models stay loaded so resuming is fast. |
+| `exit_input_mode` | none                       | Leave dictation (input) mode now, e.g. from the Numpad "+" hotkey. Idempotent — a no-op if not in input mode. The daemon replies `ack` and emits an `input_mode` `end` status. |
 
 The daemon replies with `ack` carrying the same `id`. Toggling is idempotent —
 resuming while already listening (or pausing while already paused) is a no-op.

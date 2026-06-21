@@ -127,3 +127,10 @@ def test_input_mode_indicator_emits_on_transition():
     lis.policy.in_input_mode = False
     lis._sync_input_mode_indicator()
     assert events[-1] == {"type": "input_mode", "state": "end"}
+
+
+def test_exit_input_mode_delegates_to_policy():
+    lis = Listener(make_config(), emit_command=lambda c: None)
+    lis.policy = MagicMock()
+    lis.exit_input_mode()
+    lis.policy.exit_input_mode.assert_called_once()

@@ -406,6 +406,13 @@ browser.runtime.onMessage.addListener((message, sender) => {
     pushListeningState()
     return Promise.resolve(listeningState())
   }
+
+  if (message.type === "exit_input_mode") {
+    if (nativePort) {
+      nativePort.postMessage({ type: "exit_input_mode", id: String(Date.now()) })
+    }
+    return
+  }
 })
 
 function listeningState() {
