@@ -37,14 +37,16 @@ class WhisperRecognizer(SpeechRecognizer):
         logger.info("faster-whisper model loaded")
 
     def transcribe(self, pcm16, accurate=False):
-        # Already the accuracy path; `accurate` is accepted for a uniform interface.
         if self.model is None:
             return Transcript(text="", confidence=0.0)
 
         audio = np.frombuffer(pcm16, dtype=np.int16).astype(np.float32) / 32768.0
+        # The command bias is a lowercase, unpunctuated prompt and Whisper mimics
+        # that style; drop it for dictation to keep natural casing/punctuation.
+        hotwords = None if accurate else self.hotwords
         segments, _info = self.model.transcribe(
             audio, language="en", beam_size=1, condition_on_previous_text=False,
-            hotwords=self.hotwords,
+            hotwords=hotwords,
         )
 
         texts, logprobs = [], []
