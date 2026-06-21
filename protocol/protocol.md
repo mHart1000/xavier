@@ -26,7 +26,7 @@ All messages share this structure:
 
 ```json
 {
-  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening",
+  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening" | "input_mode",
   "id": "string",
   "name": "command_name",
   "args": { },
@@ -163,6 +163,25 @@ resuming while already listening (or pausing while already paused) is a no-op.
   "type": "set_listening",
   "id": "1718712000000",
   "args": { "enabled": false }
+}
+```
+
+---
+
+## Status Messages (daemon → extension)
+
+Sent **daemon → extension** to report daemon state that the extension reflects in
+its UI. Additive to v1.0: an extension that predates one ignores it. No `ack` is expected.
+
+| `type`       | fields                      | Effect                                                                                                                                  |
+|--------------|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `input_mode` | `state: "start" \| "end"`   | The daemon entered (`start`) or left (`end`) dictation mode. The extension shows/hides its input-mode indicator. Fires on entry, on "end input", and on the silence timeout. |
+
+```json
+{
+  "type": "input_mode",
+  "id": "1718712000000",
+  "state": "start"
 }
 ```
 

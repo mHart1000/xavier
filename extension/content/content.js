@@ -21,6 +21,7 @@ if (window.__xavierContentLoaded) {
   const XAVIER_HINT_CONTAINER_ID = "xavier-hint-overlay"
   const XAVIER_HINT_CLASS = "xavier-hint"
   const XAVIER_HIGHLIGHT_CONTAINER_ID = "xavier-highlight-overlay"
+  const XAVIER_INPUT_INDICATOR_ID = "xavier-input-indicator"
   const DEFAULT_SCROLL_AMOUNT = 200
 
   // Elements both the hint overlay and text highlighting can target.
@@ -143,6 +144,14 @@ if (window.__xavierContentLoaded) {
           inputText(args)
           break
 
+        case "input_mode_on":
+          showInputIndicator()
+          break
+
+        case "input_mode_off":
+          hideInputIndicator()
+          break
+
         default:
           console.warn("[Xavier Content] Unknown command:", command)
           sendResponse({ error: "Unknown command" })
@@ -250,6 +259,40 @@ if (window.__xavierContentLoaded) {
     const caret = el.selectionStart
     if (caret == null || caret === 0) return false
     return !/\s/.test(el.value.charAt(caret - 1))
+  }
+
+  /**
+   * Fixed-corner badge shown while the daemon is in input mode.
+   */
+  function showInputIndicator() {
+    hideInputIndicator()
+
+    const badge = document.createElement("div")
+    badge.id = XAVIER_INPUT_INDICATOR_ID
+    badge.textContent = '● Input mode — say "end input" to finish'
+    badge.style.cssText = `
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      background: #ff6b00;
+      color: white;
+      padding: 8px 14px;
+      border-radius: 16px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: bold;
+      pointer-events: none;
+      z-index: 2147483647;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    `
+    document.body.appendChild(badge)
+  }
+
+  function hideInputIndicator() {
+    const badge = document.getElementById(XAVIER_INPUT_INDICATOR_ID)
+    if (badge) {
+      badge.remove()
+    }
   }
 
   /**
@@ -652,6 +695,7 @@ if (window.__xavierContentLoaded) {
   function handleCancel() {
     clearHighlights()
     hideHints()
+    hideInputIndicator()
   }
 
   /**

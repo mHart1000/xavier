@@ -24,15 +24,18 @@ logger = logging.getLogger(__name__)
 
 class Listener:
 
-    def __init__(self, config, emit_command):
+    def __init__(self, config, emit_command, emit_event=None):
         self.config = config
         self.emit = emit_command
+        # Sends non-command messages (input_mode status); no-op if unset.
+        self.emit_event = emit_event or (lambda event: None)
         self.audio = None
         self.vad = None
         self.segmenter = None
         self.recognizer = None
         self.policy = None
         self.thread = None
+        self._input_mode_prev = False
         self._stop = threading.Event()
 
     def start(self):
@@ -63,6 +66,7 @@ class Listener:
         sample_rate = audio_cfg["sample_rate"]
 
         self._stop.clear()
+        self._input_mode_prev = False
 
         self.segmenter = Segmenter(
             sample_rate=sample_rate,
@@ -86,6 +90,14 @@ class Listener:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
+    def _sync_input_mode_indicator(self):
+        """Emit an input_mode status event when the mode flips. Called each frame,
+        so it catches every cause: utterance, silence timeout, or external exit."""
+        active = self.policy.in_input_mode
+        if active != self._input_mode_prev:
+            self._input_mode_prev = active
+            self.emit_event({"type": "input_mode", "state": "start" if active else "end"})
+
     def _run(self):
         threshold = self.config["vad"]["threshold"]
         sample_rate = self.config["audio"]["sample_rate"]
@@ -94,6 +106,8 @@ class Listener:
         for frame in self.audio.frames():
             if self._stop.is_set():
                 break
+
+            self._sync_input_mode_indicator()
 
             prob = self.vad.is_speech(frame)
             is_speech = prob >= threshold
@@ -147,6 +161,10 @@ class Listener:
         if self.thread is not None:
             self.thread.join(timeout=2)
             self.thread = None
+        # Worker stopped, so emit the input_mode "end" here if it was still active.
+        if self.policy is not None and self.policy.exit_input_mode():
+            self._input_mode_prev = False
+            self.emit_event({"type": "input_mode", "state": "end"})
         logger.info("Listener paused (mic released)")
 
     def resume(self):

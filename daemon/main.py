@@ -64,6 +64,12 @@ def emit_command(command):
     return safe_send(command)
 
 
+def emit_event(event):
+    # Non-command daemon -> extension messages (e.g. input_mode status).
+    event.setdefault("id", str(uuid.uuid4()))
+    return safe_send(event)
+
+
 def reply_ack(msg_id):
     safe_send({"type": "ack", "id": msg_id, "meta": {"ok": True}})
 
@@ -132,7 +138,7 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("Xavier daemon started; waiting for extension messages on stdin")
 
-    _listener = Listener(config, emit_command)
+    _listener = Listener(config, emit_command, emit_event)
 
     try:
         while True:
@@ -170,7 +176,7 @@ def run_mic_test():
         print(json.dumps(command), file=sys.stderr, flush=True)
         return True
 
-    listener = Listener(config, emit_stderr)
+    listener = Listener(config, emit_stderr, emit_stderr)
     listener.start()
     try:
         while True:
