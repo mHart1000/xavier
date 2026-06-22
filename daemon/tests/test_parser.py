@@ -27,15 +27,15 @@ def test_fixed_command_still_parses():
     assert parse_command("scroll down")["name"] == "scroll_down"
 
 
-def test_hint_click_still_parses():
-    cmd = parse_command("click a b")
-    assert cmd["name"] == "hint_click"
-    assert cmd["args"]["code"] == "AB"
+def test_bare_click_parses_but_codes_do_not():
+    # The base-26 hint code system was removed; bare "click" is the target click.
+    assert parse_command("click")["name"] == "click"
+    assert parse_command("click a b") is None
 
 
 def test_command_grammar_contains_expected_tokens():
     grammar = command_grammar()
-    for token in ("scroll", "down", "click", "open", "url", "a", "z",
+    for token in ("scroll", "down", "click", "open", "url",
                   "confirm", "confirmed", "[unk]"):
         assert token in grammar
 
@@ -142,6 +142,30 @@ def test_highlight_trailing_keeps_literal():
 
 def test_highlight_leading_ordinal_has_no_literal():
     assert "literal" not in parse_command("highlight third expand")["args"]
+
+
+def test_highlight_trailing_teen():
+    cmd = parse_command("highlight expando button fifteen")
+    assert cmd["args"]["text"] == "expando button"
+    assert cmd["args"]["ordinal"] == 15
+
+
+def test_highlight_trailing_compound_number():
+    cmd = parse_command("highlight expand twenty one")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 21
+
+
+def test_highlight_trailing_hundred():
+    cmd = parse_command("highlight expand one hundred")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 100
+
+
+def test_highlight_all_number_words_stay_literal():
+    cmd = parse_command("highlight twenty one")
+    assert cmd["args"]["text"] == "twenty one"
+    assert "ordinal" not in cmd["args"]
 
 
 def test_clear_highlights_parses():

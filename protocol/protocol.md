@@ -93,11 +93,10 @@ All commands are sent **daemon → extension** with `type: "command"`.
 
 ### Hints
 
-| `name`        | `args`                | Effect                                                          |
-|---------------|------------------------|-----------------------------------------------------------------|
-| `hints_show`  | none                  | Render hint labels over visible clickable elements.             |
-| `hints_hide`  | none                  | Remove all hint labels.                                         |
-| `hint_click`  | `{ "code": "AF" }`    | Click the element labeled `code`. Case-insensitive; see §.      |
+| `name`        | `args` | Effect                                                                                                                                |
+|---------------|--------|--------------------------------------------------------------------------------------------------------------------------------------|
+| `hints_show`  | none   | Label each visible clickable element with the spoken name used to target it (its visible text or first class name); repeats are numbered. |
+| `hints_hide`  | none   | Remove the name labels.                                                                                                              |
 
 ### Text Targeting
 
@@ -237,8 +236,6 @@ Defined error codes:
 |---------------------|----------------------------------------------------------|
 | `UNKNOWN_COMMAND`   | `name` not in the command reference.                     |
 | `INVALID_ARGS`      | A required argument was missing or malformed.            |
-| `HINT_NOT_FOUND`    | `hint_click` referenced a code that isn't on the page.   |
-| `NO_HINTS_VISIBLE`  | `hint_click` called while hints are not displayed.       |
 | `TEXT_NOT_FOUND`    | `highlight_text` matched no visible element.             |
 | `NO_ACTIVE_TARGET`  | `click` called with no highlighted target.               |
 | `NO_EDITABLE_TARGET`| `input_text` called with no editable element focused.    |
@@ -285,7 +282,7 @@ Example:
 1. **Active target.** All commands act on the currently active tab in the focused window.
 2. **Sequential execution.** The extension processes commands in receipt order; no parallelism.
 3. **Hint code normalization.** Hint codes are case-insensitive and whitespace-stripped. The daemon should send canonical uppercase (`"AF"`); the extension also accepts `"af"` and `"a f"`.
-4. **Transient overlays auto-dismiss.** Hints hide on: explicit `hints_hide`, navigation/URL change, and after a successful `hint_click`. The `highlight_text` target clears on: explicit `clear_highlights` or `cancel`, navigation/URL change, a new `highlight_text`, and after a successful `click`. **Both** also clear on any viewport-moving command (`scroll_*`, `page_*`, `jump_*`), since the fixed overlays would otherwise drift onto arbitrary elements.
+4. **Transient overlays auto-dismiss.** Hints hide on: explicit `hints_hide` or `cancel`, and navigation/URL change. The `highlight_text` target clears on: explicit `clear_highlights` or `cancel`, navigation/URL change, a new `highlight_text`, and after a successful `click`. **Both** also clear on any viewport-moving command (`scroll_*`, `page_*`, `jump_*`), since the fixed overlays would otherwise drift onto arbitrary elements.
 5. **Focus restoration.** After `focus_address`, `scroll_*` commands may not affect the page until `focus_page` is sent.
 6. **Silent no-ops.** Some commands have no effect but are not errors (e.g., `nav_back` with no history, `scroll_down` at end of page). The extension still returns `ack`.
 
@@ -296,7 +293,7 @@ Example:
 The MVP enforces conservative behavior:
 
 - No automatic form submission.
-- No inferred clicks — only explicit `hint_click` (a code the extension itself generated) or `click` acting on a target the user explicitly named via `highlight_text`.
+- No inferred clicks — `click` acts only on a target the user explicitly named via `highlight_text`.
 - `tab_close` is exposed but should be gated by the daemon's parser (e.g., disabled, or requiring a confirmation phrase) to prevent accidental data loss from misrecognition.
 
 ---

@@ -41,6 +41,7 @@ if (window.__xavierContentLoaded) {
     'input[type="password"]',
     '[tabindex]:not([tabindex="-1"])'
   ]
+  const CLICKABLE_SELECTOR = CLICKABLE_SELECTORS.join(',')
 
   // Viewport-moving commands; dismiss the fixed overlays first so they don't drift.
   const VIEWPORT_MOVING_COMMANDS = new Set([
@@ -53,7 +54,6 @@ if (window.__xavierContentLoaded) {
   ])
 
   let hintElements = []
-  let hintMap = new Map()
   let activeTarget = null
   let matchList = []
   let matchIndex = 0
@@ -103,10 +103,6 @@ if (window.__xavierContentLoaded) {
 
         case "hints_hide":
           hideHints()
-          break
-
-        case "hint_click":
-          hintClick(args)
           break
 
         case "highlight_text":
@@ -320,19 +316,12 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Hint System - Show clickable element overlays
+   * Name overlay - label each clickable object in the viewport with the spoken
+   * name used to target it ("highlight <name>"), numbering repeats.
    */
   function showHints() {
-    console.log("[Xavier Content] Showing hints")
-
-    // Clean up any existing hints first
     hideHints()
 
-    const visibleElements = collectClickableElements()
-
-    console.log(`[Xavier Content] Found ${visibleElements.length} visible clickable elements`)
-
-    // Create overlay container
     const container = document.createElement('div')
     container.id = XAVIER_HINT_CONTAINER_ID
     container.style.cssText = `
@@ -344,110 +333,99 @@ if (window.__xavierContentLoaded) {
       pointer-events: none;
       z-index: 2147483647;
     `
-
     document.body.appendChild(container)
 
-    // Generate hint labels
-    hintMap.clear()
     hintElements = []
+    const matchCache = new Map()
 
-    visibleElements.forEach((el, index) => {
-      const label = generateHintLabel(index)
+    for (const el of collectLabelableElements()) {
+      const name = displayName(el)
+      if (!name) continue
+
       const rect = el.getBoundingClientRect()
-
-      // Create hint overlay
-      const hint = document.createElement('div')
-      hint.className = XAVIER_HINT_CLASS
-      hint.textContent = label
-      hint.style.cssText = `
+      const badge = document.createElement('div')
+      badge.className = XAVIER_HINT_CLASS
+      badge.textContent = numberedLabel(name, el, matchCache)
+      badge.style.cssText = `
         position: absolute;
-        top: ${rect.top + window.scrollY}px;
-        left: ${rect.left + window.scrollX}px;
-        background: #ff6b00;
+        top: ${rect.top}px;
+        left: ${rect.left}px;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        background: #015c4d;
         color: white;
-        padding: 2px 6px;
+        padding: 1px 5px;
         border-radius: 3px;
-        font-family: monospace;
-        font-size: 12px;
-        font-weight: bold;
+        font: bold 11px/1 sans-serif;
         pointer-events: none;
         z-index: 2147483647;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
       `
+      container.appendChild(badge)
+      hintElements.push(badge)
+    }
 
-      container.appendChild(hint)
-
-      hintMap.set(label.toLowerCase(), el)
-      hintElements.push(hint)
-    })
-
-    console.log(`[Xavier Content] Created ${hintElements.length} hint labels`)
+    console.log(`[Xavier Content] Showing ${hintElements.length} name labels`)
   }
 
-  /**
-   * Hide hint overlays
-   */
   function hideHints() {
     const container = document.getElementById(XAVIER_HINT_CONTAINER_ID)
     if (container) {
       container.remove()
     }
-
-    hintMap.clear()
     hintElements = []
-
-    console.log("[Xavier Content] Hints hidden")
   }
 
   /**
-   * Click element by hint code
+   * Rendered, in-viewport elements that look clickable: in the clickable set or
+   * cursor:pointer (reaches JS-wired controls). Innermost only, so nested or
+   * inherited-pointer chains collapse to the specific target.
    */
-  function hintClick(args) {
-    const code = args && args.code
-
-    if (!code) {
-      throw new Error("Missing required argument: code")
+  function collectLabelableElements() {
+    const candidates = []
+    for (const el of document.body.querySelectorAll('*')) {
+      if (!isRendered(el) || !isInViewport(el)) continue
+      if (isClickable(el) || window.getComputedStyle(el).cursor === "pointer") {
+        candidates.push(el)
+      }
     }
+    return candidates.filter(el =>
+      !candidates.some(other => other !== el && el.contains(other))
+    )
+  }
 
-    if (hintMap.size === 0) {
-      throw new Error("Cannot click hint when hints are not showing")
-    }
-
-    const normalized = String(code).toLowerCase().replace(/\s+/g, '')
-    const element = hintMap.get(normalized)
-
-    if (!element) {
-      throw new Error(`Hint code not found: ${code}`)
-    }
-
-    console.log(`[Xavier Content] Clicking hint: ${code}`)
-
-    element.click()
-    hideHints()
+  function isClickable(el) {
+    return el.matches(CLICKABLE_SELECTOR)
   }
 
   /**
-   * Generate hint label using base-26 (A-Z, AA-ZZ, AAA-ZZZ, etc.)
+   * Name to speak to target an element: its visible text when clickable, else
+   * its first class name. Empty when it has neither (not voiceable).
    */
-  function generateHintLabel(index) {
-    let label = ''
-    let num = index
-
-    do {
-      label = String.fromCharCode(65 + (num % 26)) + label
-      num = Math.floor(num / 26) - 1
-    } while (num >= 0)
-
-    return label
+  function displayName(el) {
+    if (isClickable(el)) {
+      const text = normalizeLabel(elementLabel(el))
+      if (text) return text
+    }
+    return firstClassName(el)
   }
 
   /**
-   * Clickable elements currently in the viewport - for the hint overlay, which
-   * can only label what the user can see.
+   * Append a position when the name repeats ("expand", "expand 2", ...). The
+   * number is the element's index in findMatches, so it matches what
+   * "highlight <name> <n>" selects. Cached per name.
    */
-  function collectClickableElements() {
-    const elements = document.querySelectorAll(CLICKABLE_SELECTORS.join(','))
-    return Array.from(elements).filter(el => isRendered(el) && isInViewport(el))
+  function numberedLabel(name, el, cache) {
+    let list = cache.get(name)
+    if (!list) {
+      list = findMatches(name, null)
+      cache.set(name, list)
+    }
+    if (list.length <= 1) return name
+    const index = list.indexOf(el)
+    return index > 0 ? `${name} ${index + 1}` : name
   }
 
   /**
@@ -456,7 +434,7 @@ if (window.__xavierContentLoaded) {
    * and scroll them into view.
    */
   function collectMatchableElements() {
-    const elements = document.querySelectorAll(CLICKABLE_SELECTORS.join(','))
+    const elements = document.querySelectorAll(CLICKABLE_SELECTOR)
     return Array.from(elements).filter(isRendered)
   }
 

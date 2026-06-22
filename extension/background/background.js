@@ -163,7 +163,6 @@ async function handleCommand(message) {
       case "jump_bottom":
       case "hints_show":
       case "hints_hide":
-      case "hint_click":
       case "highlight_text":
       case "highlight_next":
       case "highlight_previous":
