@@ -43,7 +43,7 @@ LOW_RISK = frozenset({
 })
 MEDIUM_RISK = frozenset({
     "nav_back", "nav_forward", "nav_reload",
-    "tab_new", "tab_next", "tab_prev", "hint_click", "click", "open_new_tab", "focus_address",
+    "tab_new", "tab_next", "tab_prev", "click", "open_new_tab", "focus_address",
 })
 HIGH_RISK = frozenset({"tab_close", "open_url"})
 

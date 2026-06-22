@@ -5,7 +5,6 @@ Output command names match protocol/protocol.md v1.0.
 """
 
 import re
-import string
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,7 +25,7 @@ def normalize_transcript(transcript):
 
 # Canonical vocabulary: normalized spoken phrase -> command name. Single source
 # of truth for both matching and recognizer biasing (see command_hotwords()).
-# hint_click is handled separately because it carries a variable code argument.
+# highlight_text is handled separately (regex) because it carries a text argument.
 PHRASE_COMMANDS = {
     "back": "nav_back",
     "go back": "nav_back",
@@ -121,7 +120,6 @@ def command_grammar(wake_phrase=None):
     words.update(CANCEL_WORDS)        # abort a pending confirmation
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
-    words.update(string.ascii_lowercase)  # single-letter hint codes (a-z)
     if wake_phrase:
         words.update(normalize_transcript(wake_phrase).split())
     return sorted(words) + ["[unk]"]
@@ -151,11 +149,6 @@ def parse_command(transcript, confidence=1.0):
     name = PHRASE_COMMANDS.get(normalized)
     if name is not None:
         return _make_command(name, {}, confidence, raw)
-
-    hint_match = re.match(r'^click\s+([a-z\s]+)$', normalized)
-    if hint_match:
-        code = hint_match.group(1).replace(' ', '').upper()
-        return _make_command("hint_click", {"code": code}, confidence, raw)
 
     highlight_match = re.match(r'^highlight (.+)$', normalized)
     if highlight_match:

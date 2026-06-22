@@ -27,15 +27,15 @@ def test_fixed_command_still_parses():
     assert parse_command("scroll down")["name"] == "scroll_down"
 
 
-def test_hint_click_still_parses():
-    cmd = parse_command("click a b")
-    assert cmd["name"] == "hint_click"
-    assert cmd["args"]["code"] == "AB"
+def test_bare_click_parses_but_codes_do_not():
+    # The base-26 hint code system was removed; bare "click" is the target click.
+    assert parse_command("click")["name"] == "click"
+    assert parse_command("click a b") is None
 
 
 def test_command_grammar_contains_expected_tokens():
     grammar = command_grammar()
-    for token in ("scroll", "down", "click", "open", "url", "a", "z",
+    for token in ("scroll", "down", "click", "open", "url",
                   "confirm", "confirmed", "[unk]"):
         assert token in grammar
 
