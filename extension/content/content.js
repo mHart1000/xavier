@@ -354,11 +354,11 @@ if (window.__xavierContentLoaded) {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        background: #ff6b00;
+        background: #015c4d;
         color: white;
         padding: 1px 5px;
         border-radius: 3px;
-        font: bold 12px/1.4 sans-serif;
+        font: bold 11px/1 sans-serif;
         pointer-events: none;
         z-index: 2147483647;
         box-shadow: 0 1px 3px rgba(0,0,0,0.4);
