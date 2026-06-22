@@ -144,6 +144,30 @@ def test_highlight_leading_ordinal_has_no_literal():
     assert "literal" not in parse_command("highlight third expand")["args"]
 
 
+def test_highlight_trailing_teen():
+    cmd = parse_command("highlight expando button fifteen")
+    assert cmd["args"]["text"] == "expando button"
+    assert cmd["args"]["ordinal"] == 15
+
+
+def test_highlight_trailing_compound_number():
+    cmd = parse_command("highlight expand twenty one")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 21
+
+
+def test_highlight_trailing_hundred():
+    cmd = parse_command("highlight expand one hundred")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 100
+
+
+def test_highlight_all_number_words_stay_literal():
+    cmd = parse_command("highlight twenty one")
+    assert cmd["args"]["text"] == "twenty one"
+    assert "ordinal" not in cmd["args"]
+
+
 def test_clear_highlights_parses():
     assert parse_command("clear highlights")["name"] == "clear_highlights"
 

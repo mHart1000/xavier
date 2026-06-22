@@ -86,15 +86,18 @@ ORDINAL_WORDS = {
     "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10,
 }
 
-# Trailing position words: "highlight expand three" == "highlight third expand".
-CARDINAL_WORDS = {
+# Spoken cardinals for a trailing position ("expand fifteen" == "expand 15"),
+# including homonyms Whisper mis-hears ("two" -> "to"). Parsed by _words_to_number.
+SMALL_NUMBERS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-}
-
-# Trailing-position homonyms for numbers Whisper mis-hears ("two" -> "to").
-NUMBER_HOMONYMS = {
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
     "won": 1, "to": 2, "too": 2, "for": 4, "fore": 4, "ate": 8,
+}
+TENS_NUMBERS = {
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
 }
 
 
@@ -102,7 +105,9 @@ def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
     words = {"highlight", "input", "end"}  # trigger-routed words, not PHRASE_COMMANDS entries
     words.update(ORDINAL_WORDS)   # bias "highlight <ordinal> <target>"
-    words.update(CARDINAL_WORDS)  # bias "highlight <target> <number>"
+    words.update(SMALL_NUMBERS)   # bias trailing number words
+    words.update(TENS_NUMBERS)
+    words.add("hundred")
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
     return " ".join(sorted(words))
@@ -177,15 +182,36 @@ def _numeric_token(token):
     return int(match.group(1)) if match else None
 
 
+def _is_number_word(token):
+    return token in SMALL_NUMBERS or token in TENS_NUMBERS or token == "hundred"
+
+
+def _words_to_number(words):
+    """Parse a run of cardinal number words to an int (1-999), or None."""
+    current = 0
+    seen = False
+    for word in words:
+        if word in SMALL_NUMBERS:
+            current += SMALL_NUMBERS[word]
+        elif word in TENS_NUMBERS:
+            current += TENS_NUMBERS[word]
+        elif word == "hundred":
+            current = (current or 1) * 100
+        else:
+            return None
+        seen = True
+    return current if seen else None
+
+
 def _split_position(text):
     """
     Pull a 1-based position out of a highlight phrase, returning
     (pos_or_None, rest, source) where source is "lead", "trail", or None:
-      - leading ordinal: "third expand" / "3 expand"            -> "lead"
-      - trailing number: "expand three" / "expand 3" / "expand to" -> "trail"
+      - leading ordinal: "third expand" / "3 expand"                 -> "lead"
+      - trailing number: "expand fifteen" / "expand 15" / "expand to" -> "trail"
     A target must remain on the other side, so "highlight first" / "highlight
-    three" stay literal. Cardinals and homonyms are read only as a trailing
-    position, not a leading one, so a target like "one piece" is left intact.
+    twenty one" stay literal. Cardinals are read only as a trailing position, not
+    a leading one, so a target like "one piece" is left intact.
     """
     tokens = text.split()
     if len(tokens) < 2:
@@ -198,14 +224,19 @@ def _split_position(text):
     if lead is not None:
         return lead, " ".join(tokens[1:]), "lead"
 
-    tail_token = tokens[-1]
-    tail = (ORDINAL_WORDS.get(tail_token)
-            or CARDINAL_WORDS.get(tail_token)
-            or NUMBER_HOMONYMS.get(tail_token))
-    if tail is None:
-        tail = _numeric_token(tail_token)
-    if tail is not None:
-        return tail, " ".join(tokens[:-1]), "trail"
+    last_digit = _numeric_token(tokens[-1])
+    if last_digit is not None:
+        return last_digit, " ".join(tokens[:-1]), "trail"
+
+    # Consume a trailing run of number words ("fifteen", "twenty one"), leaving a
+    # target in front; an all-number phrase (no target) stays literal.
+    start = len(tokens)
+    while start > 0 and _is_number_word(tokens[start - 1]):
+        start -= 1
+    if 0 < start < len(tokens):
+        value = _words_to_number(tokens[start:])
+        if value is not None:
+            return value, " ".join(tokens[:start]), "trail"
 
     return None, text, None
 
