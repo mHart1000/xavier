@@ -36,7 +36,8 @@ class VoskRecognizer(SpeechRecognizer):
             self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
             logger.info("Vosk model loaded")
 
-    def transcribe(self, pcm16):
+    def transcribe(self, pcm16, accurate=False):
+        # No separate accuracy path; `accurate` is ignored.
         if self.recognizer is None:
             return Transcript(text="", confidence=0.0)
 

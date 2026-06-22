@@ -1,6 +1,6 @@
 """Parser: open_url spoken-URL parsing, command grammar, and triggers."""
 
-from core.parser import command_grammar, command_triggers, parse_command
+from core.parser import command_grammar, command_triggers, input_command, parse_command
 
 
 def test_open_url_dot():
@@ -46,7 +46,20 @@ def test_command_grammar_includes_wake_word():
 
 
 def test_command_triggers():
-    assert command_triggers() == ("open url", "highlight")
+    assert command_triggers() == ("open url", "highlight", "input")
+
+
+def test_command_grammar_contains_input():
+    # "input" must be in the grammar so Vosk recognizes the trigger word.
+    assert "input" in command_grammar()
+
+
+def test_input_command_shape():
+    cmd = input_command("Hello, world.")
+    assert cmd["name"] == "input_text"
+    assert cmd["args"] == {"text": "Hello, world."}
+    # Dictated text keeps its casing/punctuation; raw mirrors the text by default.
+    assert cmd["meta"]["raw"] == "Hello, world."
 
 
 def test_bare_click_parses():

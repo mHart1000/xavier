@@ -65,8 +65,47 @@ function handleNativeMessage(message) {
       sendAck(message.id)
       break
 
+    case "input_mode":
+      handleInputMode(message)
+      break
+
     default:
       console.warn("[Xavier] Unknown message type:", message.type)
+  }
+}
+
+/**
+ * Daemon entered/left dictation mode: update the toolbar badge and on-page indicator.
+ */
+function handleInputMode(message) {
+  const active = message.state === "start"
+  browser.action.setBadgeText({ text: active ? "●" : "" })
+  if (active) {
+    browser.action.setBadgeBackgroundColor({ color: "#ff6b00" })
+  }
+  showInputIndicator(active).catch(error =>
+    console.error("[Xavier] input indicator toggle failed:", error)
+  )
+}
+
+/**
+ * Show/hide the on-page input-mode indicator in the active tab.
+ */
+async function showInputIndicator(active) {
+  const tabs = await browser.tabs.query({ active: true, currentWindow: true })
+  if (!tabs[0]) return
+
+  const tab = tabs[0]
+  const message = { command: active ? "input_mode_on" : "input_mode_off", args: {} }
+
+  try {
+    await browser.tabs.sendMessage(tab.id, message)
+  } catch (error) {
+    // Inject and retry when showing; on hide a missing script means nothing to clear.
+    if (active && isNoReceiverError(error)) {
+      await injectContentScript(tab)
+      await browser.tabs.sendMessage(tab.id, message)
+    }
   }
 }
 
@@ -133,6 +172,7 @@ async function handleCommand(message) {
       case "clear_highlights":
       case "cancel":
       case "focus_page":
+      case "input_text":
         await forwardToContentScript(name, args)
         break
 
@@ -365,6 +405,13 @@ browser.runtime.onMessage.addListener((message, sender) => {
     listening = Boolean(message.enabled)
     pushListeningState()
     return Promise.resolve(listeningState())
+  }
+
+  if (message.type === "exit_input_mode") {
+    if (nativePort) {
+      nativePort.postMessage({ type: "exit_input_mode", id: String(Date.now()) })
+    }
+    return
   }
 })
 

@@ -64,6 +64,12 @@ def emit_command(command):
     return safe_send(command)
 
 
+def emit_event(event):
+    # Non-command daemon -> extension messages (e.g. input_mode status).
+    event.setdefault("id", str(uuid.uuid4()))
+    return safe_send(event)
+
+
 def reply_ack(msg_id):
     safe_send({"type": "ack", "id": msg_id, "meta": {"ok": True}})
 
@@ -116,12 +122,22 @@ def handle_set_listening(message, logger):
     reply_ack(message.get("id"))
 
 
+def handle_exit_input_mode(message, logger):
+    # Exit dictation mode on request (e.g. the Numpad "+" hotkey).
+    if _listener is None or not _listener_started:
+        logger.info("exit_input_mode received before listener started; ignoring")
+        return
+    _listener.exit_input_mode()
+    reply_ack(message.get("id"))
+
+
 HANDLERS = {
     "ready": handle_ready,
     "ack": handle_ack,
     "error": handle_error,
     "ping": handle_ping,
     "set_listening": handle_set_listening,
+    "exit_input_mode": handle_exit_input_mode,
 }
 
 
@@ -132,7 +148,7 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("Xavier daemon started; waiting for extension messages on stdin")
 
-    _listener = Listener(config, emit_command)
+    _listener = Listener(config, emit_command, emit_event)
 
     try:
         while True:
@@ -170,7 +186,7 @@ def run_mic_test():
         print(json.dumps(command), file=sys.stderr, flush=True)
         return True
 
-    listener = Listener(config, emit_stderr)
+    listener = Listener(config, emit_stderr, emit_stderr)
     listener.start()
     try:
         while True:

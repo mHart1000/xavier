@@ -27,8 +27,12 @@ class SpeechRecognizer:
         """Load the model. Heavy; called once at startup."""
         raise NotImplementedError
 
-    def transcribe(self, pcm16):
-        """Transcribe one utterance (int16 PCM bytes). Returns Transcript."""
+    def transcribe(self, pcm16, accurate=False):
+        """
+        Transcribe one utterance (int16 PCM bytes). Returns Transcript.
+        accurate=True requests the high-accuracy path for free-form dictation
+        (input mode); engines without a separate accuracy path ignore it.
+        """
         raise NotImplementedError
 
     def close(self):

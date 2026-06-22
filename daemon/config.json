@@ -32,7 +32,8 @@
     "pre_roll_ms": 500,
     "min_speech_ms": 150,
     "end_silence_ms": 400,
-    "max_segment_seconds": 8
+    "max_segment_seconds": 8,
+    "input_silence_timeout_seconds": 5
   },
   "safety": {
     "confirm_high_risk_commands": true,

@@ -11,6 +11,7 @@ released when Firefox closes the Native Messaging port.
 
 import logging
 import threading
+import time
 
 from audio.input import AudioInput
 from audio.segmenter import Segmenter
@@ -23,15 +24,18 @@ logger = logging.getLogger(__name__)
 
 class Listener:
 
-    def __init__(self, config, emit_command):
+    def __init__(self, config, emit_command, emit_event=None):
         self.config = config
         self.emit = emit_command
+        # Sends non-command messages (input_mode status); no-op if unset.
+        self.emit_event = emit_event or (lambda event: None)
         self.audio = None
         self.vad = None
         self.segmenter = None
         self.recognizer = None
         self.policy = None
         self.thread = None
+        self._input_mode_prev = False
         self._stop = threading.Event()
 
     def start(self):
@@ -62,6 +66,7 @@ class Listener:
         sample_rate = audio_cfg["sample_rate"]
 
         self._stop.clear()
+        self._input_mode_prev = False
 
         self.segmenter = Segmenter(
             sample_rate=sample_rate,
@@ -85,6 +90,14 @@ class Listener:
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
+    def _sync_input_mode_indicator(self):
+        """Emit an input_mode status event when the mode flips. Called each frame,
+        so it catches every cause: utterance, silence timeout, or external exit."""
+        active = self.policy.in_input_mode
+        if active != self._input_mode_prev:
+            self._input_mode_prev = active
+            self.emit_event({"type": "input_mode", "state": "start" if active else "end"})
+
     def _run(self):
         threshold = self.config["vad"]["threshold"]
         sample_rate = self.config["audio"]["sample_rate"]
@@ -94,9 +107,20 @@ class Listener:
             if self._stop.is_set():
                 break
 
+            self._sync_input_mode_indicator()
+
             prob = self.vad.is_speech(frame)
             is_speech = prob >= threshold
             frame_count += 1
+
+            # Input mode: hold it open while speech continues, auto-exit on silence.
+            if self.policy.in_input_mode:
+                now = time.monotonic()
+                if is_speech:
+                    self.policy.refresh_input_activity(now)
+                elif self.policy.input_expired(now):
+                    self.policy.exit_input_mode()
+                    logger.info("input mode ended (%ss silence)", self.policy.input_silence_timeout)
 
             # Heartbeat every ~10 s so the user knows the pipeline is alive.
             if frame_count % 313 == 0:
@@ -114,7 +138,7 @@ class Listener:
             duration_ms = len(utterance) // 2 / sample_rate * 1000
             logger.info("utterance collected (%.0f ms) — transcribing…", duration_ms)
             self.vad.reset()
-            transcript = self.recognizer.transcribe(utterance)
+            transcript = self.recognizer.transcribe(utterance, accurate=self.policy.in_input_mode)
             if not transcript.text:
                 logger.info("empty transcript (utterance %.0f ms)", duration_ms)
                 continue
@@ -137,6 +161,10 @@ class Listener:
         if self.thread is not None:
             self.thread.join(timeout=2)
             self.thread = None
+        # Worker stopped, so emit the input_mode "end" here if it was still active.
+        if self.policy is not None and self.policy.exit_input_mode():
+            self._input_mode_prev = False
+            self.emit_event({"type": "input_mode", "state": "end"})
         logger.info("Listener paused (mic released)")
 
     def resume(self):
@@ -146,6 +174,12 @@ class Listener:
         self.vad.reset()
         self._start_capture()
         logger.info("Listener resumed")
+
+    def exit_input_mode(self):
+        """External request to leave input mode (e.g. the extension's exit hotkey).
+        The worker loop emits the 'end' status on its next tick."""
+        if self.policy is not None:
+            self.policy.exit_input_mode()
 
     def stop(self):
         self.pause()

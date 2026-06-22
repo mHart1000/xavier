@@ -12,7 +12,7 @@ Whisper never runs on random speech.
 
 import logging
 
-from core.parser import command_grammar, command_triggers, normalize_transcript
+from core.parser import INPUT_TRIGGER, command_grammar, command_triggers, normalize_transcript
 from stt.base import SpeechRecognizer, Transcript
 from stt.vosk_recognizer import VoskRecognizer
 from stt.whisper_recognizer import WhisperRecognizer
@@ -40,7 +40,14 @@ class HybridRecognizer(SpeechRecognizer):
         except Exception as e:
             logger.warning("Whisper accuracy path disabled (%s); fixed commands still work", e)
 
-    def transcribe(self, pcm16):
+    def transcribe(self, pcm16, accurate=False):
+        # Input mode forces the accuracy path: skip Vosk's grammar gate and trigger
+        # routing and transcribe the whole utterance with Whisper. Silero VAD has
+        # already gated to real speech upstream, so the reject step isn't needed.
+        if accurate and self._whisper_ok:
+            logger.info("hybrid: route=whisper (forced accurate)")
+            return self.whisper.transcribe(pcm16, accurate=True)
+
         vt = self.vosk.transcribe(pcm16)
 
         # Reject out-of-grammar audio (empty or only unknown tokens) so the
@@ -55,11 +62,14 @@ class HybridRecognizer(SpeechRecognizer):
         if self.wake and probe.startswith(self.wake + " "):
             probe = probe[len(self.wake) + 1:].strip()
 
-        if self._whisper_ok and any(
-            probe == t or probe.startswith(t + " ") for t in self.triggers
-        ):
-            logger.info("hybrid: route=whisper (vosk: %r)", vt.text)
-            return self.whisper.transcribe(pcm16)
+        if self._whisper_ok:
+            matched = next(
+                (t for t in self.triggers if probe == t or probe.startswith(t + " ")), None
+            )
+            if matched is not None:
+                # "input" is dictation (natural casing); other triggers are commands.
+                logger.info("hybrid: route=whisper (vosk: %r)", vt.text)
+                return self.whisper.transcribe(pcm16, accurate=(matched == INPUT_TRIGGER))
 
         logger.info("hybrid: route=vosk (%r)", vt.text)
         return vt

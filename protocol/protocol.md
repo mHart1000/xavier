@@ -26,7 +26,7 @@ All messages share this structure:
 
 ```json
 {
-  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening",
+  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening" | "exit_input_mode" | "input_mode",
   "id": "string",
   "name": "command_name",
   "args": { },
@@ -119,6 +119,17 @@ Name an element by its visible text or first class name, then act on it (paralle
 | `focus_address`  | none   | Focus the URL bar. May require an extra user gesture in some contexts.      |
 | `focus_page`     | none   | Return keyboard focus to the page body. Required before `scroll_*` if the URL bar was previously focused. |
 
+### Input
+
+| `name`       | `args`                | Effect                                                                                                                                                                                          |
+|--------------|-----------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `input_text` | `{ "text": "..." }`   | Type `text` into the currently focused editable element (text `<input>`, `<textarea>`, or contenteditable), inserted at the caret. Casing/punctuation are preserved. Errors if none is focused. |
+
+Sent while the daemon is in **input mode**, which the user enters by saying
+"input" and leaves by saying "end input" or after a few seconds of silence. Each
+dictated utterance arrives as its own `input_text` command; the extension is
+stateless here and simply types what it receives.
+
 ### URL (optional MVP)
 
 | `name`     | `args`                        | Effect                                  |
@@ -143,6 +154,7 @@ page. Additive to v1.0: a daemon that predates a control message ignores it.
 | `type`          | fields                       | Effect                                                                                                  |
 |-----------------|------------------------------|---------------------------------------------------------------------------------------------------------|
 | `set_listening` | `args: { "enabled": bool }`  | Resume (`true`) or pause (`false`) the speech pipeline. Pausing **releases the microphone**; STT/VAD models stay loaded so resuming is fast. |
+| `exit_input_mode` | none                       | Leave dictation (input) mode now, e.g. from the Numpad "+" hotkey. Idempotent — a no-op if not in input mode. The daemon replies `ack` and emits an `input_mode` `end` status. |
 
 The daemon replies with `ack` carrying the same `id`. Toggling is idempotent —
 resuming while already listening (or pausing while already paused) is a no-op.
@@ -152,6 +164,25 @@ resuming while already listening (or pausing while already paused) is a no-op.
   "type": "set_listening",
   "id": "1718712000000",
   "args": { "enabled": false }
+}
+```
+
+---
+
+## Status Messages (daemon → extension)
+
+Sent **daemon → extension** to report daemon state that the extension reflects in
+its UI. Additive to v1.0: an extension that predates one ignores it. No `ack` is expected.
+
+| `type`       | fields                      | Effect                                                                                                                                  |
+|--------------|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `input_mode` | `state: "start" \| "end"`   | The daemon entered (`start`) or left (`end`) dictation mode. The extension shows/hides its input-mode indicator. Fires on entry, on "end input", and on the silence timeout. |
+
+```json
+{
+  "type": "input_mode",
+  "id": "1718712000000",
+  "state": "start"
 }
 ```
 
@@ -210,6 +241,7 @@ Defined error codes:
 | `NO_HINTS_VISIBLE`  | `hint_click` called while hints are not displayed.       |
 | `TEXT_NOT_FOUND`    | `highlight_text` matched no visible element.             |
 | `NO_ACTIVE_TARGET`  | `click` called with no highlighted target.               |
+| `NO_EDITABLE_TARGET`| `input_text` called with no editable element focused.    |
 | `EXECUTION_FAILED`  | The command was valid but the browser action failed.     |
 
 ### `ping` (bidirectional)

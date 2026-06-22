@@ -75,6 +75,12 @@ CONFIRM_WORDS = ("confirm", "confirmed")
 # Words that abort a pending confirmation (see activation_policy).
 CANCEL_WORDS = ("cancel",)
 
+# "input" enters dictation mode; the exit phrase leaves it. Both are consumed by
+# the activation policy (input mode is stateful), not by parse_command. The typed
+# text is built by input_command() and keeps Whisper's casing/punctuation.
+INPUT_TRIGGER = "input"
+INPUT_EXIT_PHRASES = ("end input",)
+
 # Leading position words: "highlight <ordinal> <target>" (1-based).
 ORDINAL_WORDS = {
     "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
@@ -95,7 +101,7 @@ NUMBER_HOMONYMS = {
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
-    words = {"highlight"}  # highlight_text is trigger-routed, not a PHRASE_COMMANDS entry
+    words = {"highlight", "input", "end"}  # trigger-routed words, not PHRASE_COMMANDS entries
     words.update(ORDINAL_WORDS)   # bias "highlight <ordinal> <target>"
     words.update(CARDINAL_WORDS)  # bias "highlight <target> <number>"
     for phrase in PHRASE_COMMANDS:
@@ -110,7 +116,7 @@ def command_grammar(wake_phrase=None):
     more accurate. "[unk]" lets out-of-grammar audio map to an unknown token so
     random speech is rejected rather than forced onto a command word.
     """
-    words = {"click", "open", "url", "highlight"}  # open/url/highlight route to Whisper
+    words = {"click", "open", "url", "highlight", "input"}  # these route to Whisper
     words.update(CONFIRM_WORDS)       # gate the HIGH_RISK confirmation step
     words.update(CANCEL_WORDS)        # abort a pending confirmation
     for phrase in PHRASE_COMMANDS:
@@ -123,7 +129,7 @@ def command_grammar(wake_phrase=None):
 
 def command_triggers():
     """Normalized phrases that route an utterance to the Whisper (accuracy) path."""
-    return ("open url", "highlight")
+    return ("open url", "highlight", "input")
 
 
 def parse_command(transcript, confidence=1.0):
@@ -223,6 +229,15 @@ def _spoken_to_url(spoken):
     if "://" not in url:
         url = "https://" + url
     return url
+
+
+def input_command(text, confidence=1.0, raw=None):
+    """
+    Build an input_text command carrying dictated text. Used by the activation
+    policy while in input mode. Unlike other commands, the text keeps Whisper's
+    casing/punctuation (it is not normalized), so raw defaults to the text itself.
+    """
+    return _make_command("input_text", {"text": text}, confidence, text if raw is None else raw)
 
 
 def _make_command(name, args, confidence, raw):

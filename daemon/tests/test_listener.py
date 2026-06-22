@@ -4,6 +4,7 @@ The mocked AudioInput yields no frames, so the worker thread exits immediately;
 these tests assert the mic/thread/recognizer wiring, not the speech pipeline.
 """
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -108,3 +109,28 @@ def test_stop_closes_recognizer(listener):
 
     recognizer.close.assert_called_once()
     assert listener.audio is None
+
+
+def test_input_mode_indicator_emits_on_transition():
+    events = []
+    lis = Listener(make_config(), emit_command=lambda c: None, emit_event=events.append)
+    lis.policy = SimpleNamespace(in_input_mode=False)
+
+    lis._sync_input_mode_indicator()
+    assert events == []                       # no change → no event
+
+    lis.policy.in_input_mode = True
+    lis._sync_input_mode_indicator()
+    lis._sync_input_mode_indicator()          # idempotent while active
+    assert events == [{"type": "input_mode", "state": "start"}]
+
+    lis.policy.in_input_mode = False
+    lis._sync_input_mode_indicator()
+    assert events[-1] == {"type": "input_mode", "state": "end"}
+
+
+def test_exit_input_mode_delegates_to_policy():
+    lis = Listener(make_config(), emit_command=lambda c: None)
+    lis.policy = MagicMock()
+    lis.exit_input_mode()
+    lis.policy.exit_input_mode.assert_called_once()
