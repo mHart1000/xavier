@@ -96,7 +96,8 @@ All commands are sent **daemon → extension** with `type: "command"`.
 | `name`        | `args` | Effect                                                                                                                                |
 |---------------|--------|--------------------------------------------------------------------------------------------------------------------------------------|
 | `hints_show`  | none   | Label each visible clickable element with the spoken name used to target it (its visible text or first class name); repeats are numbered. |
-| `hints_hide`  | none   | Remove the name labels.                                                                                                              |
+| `links_show`  | none   | Label each visible clickable element with `link N` (1-based, document order); say "link N" to target it. Mutually exclusive with `hints_show` — showing either clears the other. |
+| `hints_hide`  | none   | Remove the hint or link overlay.                                                                                                    |
 
 ### Text Targeting
 
@@ -107,6 +108,7 @@ Name an element by its visible text or first class name, then act on it (paralle
 | `highlight_text`     | `{ "text": "expand", "ordinal": 3, "literal": "expand three" }` | Highlight the element matching `text` by visible text (substring) or exact first class name; set it as the active target. Optional `ordinal` (1-based) picks which match to start on; out of range clamps to the last. Optional `literal` is the full spoken phrase including a trailing number word — the extension tries it as a match first (so a real target ending in a number word wins) before falling back to `text` + `ordinal`. |
 | `highlight_next`     | none                    | Move the highlight to the next element matching the current text (wraps).               |
 | `highlight_previous` | none                    | Move the highlight to the previous element matching the current text (wraps).           |
+| `link_select`        | `{ "number": N }`       | Select the Nth label from the most recent `links_show` (1-based) as the active target — highlights it; does not click. Errors if `number` is out of range. |
 | `click`              | none                    | Click the active highlighted target, then clear the highlight.                          |
 | `open_new_tab`       | none                    | Open the active highlighted target's link in a new background tab (focus stays on the current tab), then clear the highlight. |
 | `clear_highlights`   | none                    | Remove the highlight and clear the active target.                                       |
@@ -282,7 +284,7 @@ Example:
 1. **Active target.** All commands act on the currently active tab in the focused window.
 2. **Sequential execution.** The extension processes commands in receipt order; no parallelism.
 3. **Hint code normalization.** Hint codes are case-insensitive and whitespace-stripped. The daemon should send canonical uppercase (`"AF"`); the extension also accepts `"af"` and `"a f"`.
-4. **Transient overlays auto-dismiss.** Hints hide on: explicit `hints_hide` or `cancel`, and navigation/URL change. The `highlight_text` target clears on: explicit `clear_highlights` or `cancel`, navigation/URL change, a new `highlight_text`, and after a successful `click`. **Both** also clear on any viewport-moving command (`scroll_*`, `page_*`, `jump_*`), since the fixed overlays would otherwise drift onto arbitrary elements.
+4. **Transient overlays auto-dismiss.** The hint/link overlay hides on: explicit `hints_hide` or `cancel`, and navigation/URL change. The `highlight_text` target clears on: explicit `clear_highlights` or `cancel`, navigation/URL change, a new `highlight_text`, and after a successful `click`. **Both** also clear on any viewport-moving command (`scroll_*`, `page_*`, `jump_*`), since the fixed overlays would otherwise drift onto arbitrary elements.
 5. **Focus restoration.** After `focus_address`, `scroll_*` commands may not affect the page until `focus_page` is sent.
 6. **Silent no-ops.** Some commands have no effect but are not errors (e.g., `nav_back` with no history, `scroll_down` at end of page). The extension still returns `ack`.
 

@@ -53,6 +53,9 @@ PHRASE_COMMANDS = {
     "show hints": "hints_show",
     "hints": "hints_show",
     "hide hints": "hints_hide",
+    "show links": "links_show",
+    "links": "links_show",
+    "hide links": "hints_hide",
     "click": "click",
     "open in new tab": "open_new_tab",
     "open in a new tab": "open_new_tab",
@@ -103,7 +106,7 @@ TENS_NUMBERS = {
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
-    words = {"highlight", "input", "end"}  # trigger-routed words, not PHRASE_COMMANDS entries
+    words = {"highlight", "input", "end", "link"}  # trigger-routed words, not PHRASE_COMMANDS entries
     words.update(ORDINAL_WORDS)   # bias "highlight <ordinal> <target>"
     words.update(SMALL_NUMBERS)   # bias trailing number words
     words.update(TENS_NUMBERS)
@@ -120,7 +123,7 @@ def command_grammar(wake_phrase=None):
     more accurate. "[unk]" lets out-of-grammar audio map to an unknown token so
     random speech is rejected rather than forced onto a command word.
     """
-    words = {"click", "open", "url", "highlight", "input"}  # these route to Whisper
+    words = {"click", "open", "url", "highlight", "input", "link"}  # these route to Whisper
     words.update(CONFIRM_WORDS)       # gate the HIGH_RISK confirmation step
     words.update(CANCEL_WORDS)        # abort a pending confirmation
     for phrase in PHRASE_COMMANDS:
@@ -132,7 +135,7 @@ def command_grammar(wake_phrase=None):
 
 def command_triggers():
     """Normalized phrases that route an utterance to the Whisper (accuracy) path."""
-    return ("open url", "highlight", "input")
+    return ("open url", "highlight", "input", "link")
 
 
 def parse_command(transcript, confidence=1.0):
@@ -166,6 +169,12 @@ def parse_command(transcript, confidence=1.0):
                 # Keep the full phrase: the trailing number may have been a real word.
                 args["literal"] = inner
         return _make_command("highlight_text", args, confidence, raw)
+
+    link_match = re.match(r'^link (.+)$', normalized)
+    if link_match:
+        number = _parse_number(link_match.group(1).split())
+        if number is not None:
+            return _make_command("link_select", {"number": number}, confidence, raw)
 
     url_match = re.match(r'^open url (.+)$', normalized)
     if url_match:
@@ -201,6 +210,15 @@ def _words_to_number(words):
             return None
         seen = True
     return current if seen else None
+
+
+def _parse_number(tokens):
+    """A run of number tokens -> int: a single digit (5, 5th) or cardinal words (1-999)."""
+    if len(tokens) == 1:
+        digit = _numeric_token(tokens[0])
+        if digit is not None:
+            return digit
+    return _words_to_number(tokens)
 
 
 def _split_position(text):
