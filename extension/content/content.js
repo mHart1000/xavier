@@ -54,6 +54,7 @@ if (window.__xavierContentLoaded) {
   ])
 
   let hintElements = []
+  let linkTargets = []
   let activeTarget = null
   let matchList = []
   let matchIndex = 0
@@ -103,6 +104,14 @@ if (window.__xavierContentLoaded) {
 
         case "hints_hide":
           hideHints()
+          break
+
+        case "links_show":
+          showLinks()
+          break
+
+        case "link_select":
+          selectLink(args)
           break
 
         case "highlight_text":
@@ -321,7 +330,60 @@ if (window.__xavierContentLoaded) {
    */
   function showHints() {
     hideHints()
+    const container = createOverlayContainer()
+    document.body.appendChild(container)
 
+    hintElements = []
+    const matchCache = new Map()
+
+    for (const el of collectLabelableElements()) {
+      const name = displayName(el)
+      if (!name) continue
+
+      const badge = document.createElement('div')
+      badge.className = XAVIER_HINT_CLASS
+      badge.textContent = numberedLabel(name, el, matchCache)
+      badge.style.cssText = hintBadgeCss(el.getBoundingClientRect())
+      container.appendChild(badge)
+      hintElements.push(badge)
+    }
+
+    console.log(`[Xavier Content] Showing ${hintElements.length} name labels`)
+  }
+
+  /**
+   * Number overlay - label each clickable object in the viewport with "link N",
+   * the number to speak ("link N") to target it. Mutually exclusive with the name
+   * overlay: hideHints() clears whichever is showing (shared container). Numbers
+   * every labelable element, including those with no speakable name.
+   */
+  function showLinks() {
+    hideHints()
+    const container = createOverlayContainer()
+    document.body.appendChild(container)
+
+    hintElements = []
+    linkTargets = []
+
+    for (const el of collectLabelableElements()) {
+      linkTargets.push(el)
+
+      const badge = document.createElement('div')
+      badge.className = XAVIER_HINT_CLASS
+      badge.textContent = `link ${linkTargets.length}`
+      badge.style.cssText = hintBadgeCss(el.getBoundingClientRect())
+      container.appendChild(badge)
+      hintElements.push(badge)
+    }
+
+    console.log(`[Xavier Content] Showing ${linkTargets.length} link labels`)
+  }
+
+  /**
+   * Full-viewport fixed container for the hint/link overlay. Fixed positioning
+   * means badges use viewport coords (getBoundingClientRect, no scroll offset).
+   */
+  function createOverlayContainer() {
     const container = document.createElement('div')
     container.id = XAVIER_HINT_CONTAINER_ID
     container.style.cssText = `
@@ -333,41 +395,30 @@ if (window.__xavierContentLoaded) {
       pointer-events: none;
       z-index: 2147483647;
     `
-    document.body.appendChild(container)
+    return container
+  }
 
-    hintElements = []
-    const matchCache = new Map()
-
-    for (const el of collectLabelableElements()) {
-      const name = displayName(el)
-      if (!name) continue
-
-      const rect = el.getBoundingClientRect()
-      const badge = document.createElement('div')
-      badge.className = XAVIER_HINT_CLASS
-      badge.textContent = numberedLabel(name, el, matchCache)
-      badge.style.cssText = `
-        position: absolute;
-        top: ${rect.top}px;
-        left: ${rect.left}px;
-        max-width: 200px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        background: #015c4d;
-        color: white;
-        padding: 1px 5px;
-        border-radius: 3px;
-        font: bold 11px/1 sans-serif;
-        pointer-events: none;
-        z-index: 2147483647;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-      `
-      container.appendChild(badge)
-      hintElements.push(badge)
-    }
-
-    console.log(`[Xavier Content] Showing ${hintElements.length} name labels`)
+  /**
+   * Badge style for one overlay label, positioned at the element's top-left.
+   */
+  function hintBadgeCss(rect) {
+    return `
+      position: absolute;
+      top: ${rect.top}px;
+      left: ${rect.left}px;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      background: #015c4d;
+      color: white;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font: bold 11px/1 sans-serif;
+      pointer-events: none;
+      z-index: 2147483647;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    `
   }
 
   function hideHints() {
@@ -376,6 +427,7 @@ if (window.__xavierContentLoaded) {
       container.remove()
     }
     hintElements = []
+    linkTargets = []
   }
 
   /**
@@ -498,6 +550,30 @@ if (window.__xavierContentLoaded) {
     applyMatch()
 
     console.log(`[Xavier Content] Highlighted ${matchIndex + 1}/${matchList.length} for: ${text}`)
+  }
+
+  /**
+   * Select the Nth link from the last "show links" as the active target, so
+   * "click"/"open in new tab" act on it. Reuses the highlight machinery.
+   */
+  function selectLink(args) {
+    const number = args && args.number
+
+    if (!number) {
+      throw new Error("Missing required argument: number")
+    }
+
+    const el = linkTargets[number - 1]
+    if (!el || !document.contains(el)) {
+      throw new Error(`No link numbered ${number}`)
+    }
+
+    clearHighlights()
+    matchList = [el]
+    matchIndex = 0
+    applyMatch()
+
+    console.log(`[Xavier Content] Selected link ${number}`)
   }
 
   /**
