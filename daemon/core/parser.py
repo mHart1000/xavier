@@ -103,6 +103,12 @@ TENS_NUMBERS = {
     "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
 }
 
+# Spoken zero, for digit-by-digit readings ("two oh five" = 205).
+ZERO_WORDS = {"oh", "zero"}
+
+# Connectors ignored inside a spoken number ("one hundred and three" = 103).
+NUMBER_CONNECTORS = {"and"}
+
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
@@ -110,6 +116,7 @@ def command_hotwords():
     words.update(ORDINAL_WORDS)   # bias "highlight <ordinal> <target>"
     words.update(SMALL_NUMBERS)   # bias trailing number words
     words.update(TENS_NUMBERS)
+    words.update(ZERO_WORDS)
     words.add("hundred")
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
@@ -192,16 +199,35 @@ def _numeric_token(token):
 
 
 def _is_number_word(token):
-    return token in SMALL_NUMBERS or token in TENS_NUMBERS or token == "hundred"
+    return (token in SMALL_NUMBERS or token in TENS_NUMBERS or token == "hundred"
+            or token in ZERO_WORDS or token in NUMBER_CONNECTORS)
+
+
+def _as_digit(word):
+    """Single 0-9 digit for a unit or zero word, else None (teens/tens aren't digits)."""
+    if word in ZERO_WORDS:
+        return 0
+    value = SMALL_NUMBERS.get(word)
+    return value if value is not None and value <= 9 else None
 
 
 def _words_to_number(words):
     """
-    Parse a run of cardinal words to an int (1-999), or None. A lone leading unit
-    before a tens/teen is the colloquial hundreds reading, "hundred" dropped:
-    "one forty three" = 143, "one fifteen" = 115 (reading 143/115 aloud). "twenty
-    one" stays 21 because 20 is not a lone unit.
+    Parse spoken number words to an int (1-999), or None. Handles three ways of
+    reading a number aloud: place value ("one hundred forty three" = 143), dropped
+    "hundred" ("one forty three" = 143, "one fifteen" = 115; "twenty one" stays
+    21), and digit by digit ("one four three" = 143, "two oh five" = 205). "and"
+    is ignored as a connector.
     """
+    words = [w for w in words if w not in NUMBER_CONNECTORS]
+    if not words:
+        return None
+
+    # Digit by digit: every word a single digit, two or more of them.
+    digits = [_as_digit(w) for w in words]
+    if len(words) >= 2 and all(d is not None for d in digits):
+        return int("".join(str(d) for d in digits)) or None
+
     current = 0
     seen = False
     for word in words:
@@ -216,10 +242,12 @@ def _words_to_number(words):
                 current = current * 100 + value
             else:
                 current += value
+        elif word in ZERO_WORDS:
+            pass  # zero adds nothing in a place-value reading
         else:
             return None
         seen = True
-    return current if seen else None
+    return current if seen and current > 0 else None
 
 
 def _parse_number(tokens):

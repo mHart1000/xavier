@@ -183,6 +183,30 @@ def test_link_explicit_hundred_still_parses():
     assert parse_command("link one hundred forty three")["args"]["number"] == 143
 
 
+def test_link_digit_by_digit():
+    # Reading the digits of 143 / 205 / 101 aloud.
+    assert parse_command("link one four three")["args"]["number"] == 143
+    assert parse_command("link two oh five")["args"]["number"] == 205
+    assert parse_command("link one oh one")["args"]["number"] == 101
+
+
+def test_link_and_connector():
+    assert parse_command("link one hundred and three")["args"]["number"] == 103
+    assert parse_command("link one hundred and forty three")["args"]["number"] == 143
+
+
+def test_highlight_trailing_digit_by_digit_with_zero():
+    # "two oh five" as a trailing position relies on "oh" being a number word.
+    cmd = parse_command("highlight expand two oh five")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 205
+
+
+def test_link_bare_zero_is_no_match():
+    # A pure-zero reading isn't a valid 1-based selection.
+    assert parse_command("link oh") is None
+
+
 def test_show_links_parses():
     assert parse_command("show links")["name"] == "links_show"
 
