@@ -410,11 +410,11 @@ if (window.__xavierContentLoaded) {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      background: #015c4d;
-      color: white;
-      padding: 1px 5px;
+      background: rgba(1, 92, 77, 0.7);
+      color: rgba(255, 255, 255, 0.7);
+      padding: 1px 2px;
       border-radius: 3px;
-      font: bold 11px/1 sans-serif;
+      font: bold 10px/1 sans-serif;
       pointer-events: none;
       z-index: 2147483647;
       box-shadow: 0 1px 3px rgba(0,0,0,0.4);
