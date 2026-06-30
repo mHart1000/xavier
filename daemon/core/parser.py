@@ -196,16 +196,26 @@ def _is_number_word(token):
 
 
 def _words_to_number(words):
-    """Parse a run of cardinal number words to an int (1-999), or None."""
+    """
+    Parse a run of cardinal words to an int (1-999), or None. A lone leading unit
+    before a tens/teen is the colloquial hundreds reading, "hundred" dropped:
+    "one forty three" = 143, "one fifteen" = 115 (reading 143/115 aloud). "twenty
+    one" stays 21 because 20 is not a lone unit.
+    """
     current = 0
     seen = False
     for word in words:
-        if word in SMALL_NUMBERS:
-            current += SMALL_NUMBERS[word]
-        elif word in TENS_NUMBERS:
-            current += TENS_NUMBERS[word]
-        elif word == "hundred":
+        if word == "hundred":
             current = (current or 1) * 100
+        elif word in TENS_NUMBERS:
+            tens = TENS_NUMBERS[word]
+            current = current * 100 + tens if 1 <= current <= 9 else current + tens
+        elif word in SMALL_NUMBERS:
+            value = SMALL_NUMBERS[word]
+            if 10 <= value <= 19 and 1 <= current <= 9:
+                current = current * 100 + value
+            else:
+                current += value
         else:
             return None
         seen = True

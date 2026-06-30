@@ -168,6 +168,21 @@ def test_highlight_all_number_words_stay_literal():
     assert "ordinal" not in cmd["args"]
 
 
+def test_link_colloquial_hundred():
+    # Reading "143"/"153" aloud with the "hundred" dropped.
+    assert parse_command("link one forty three")["args"]["number"] == 143
+    assert parse_command("link one fifty three")["args"]["number"] == 153
+
+
+def test_link_colloquial_teen_hundred():
+    # "one fifteen" reads 115, not 16.
+    assert parse_command("link one fifteen")["args"]["number"] == 115
+
+
+def test_link_explicit_hundred_still_parses():
+    assert parse_command("link one hundred forty three")["args"]["number"] == 143
+
+
 def test_show_links_parses():
     assert parse_command("show links")["name"] == "links_show"
 
