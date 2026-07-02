@@ -69,6 +69,10 @@ function handleNativeMessage(message) {
       handleInputMode(message)
       break
 
+    case "confirm":
+      handleConfirmPrompt(message)
+      break
+
     default:
       console.warn("[Xavier] Unknown message type:", message.type)
   }
@@ -107,6 +111,49 @@ async function showInputIndicator(active) {
       await browser.tabs.sendMessage(tab.id, message)
     }
   }
+}
+
+// Tab that currently shows the high-risk confirm prompt, so we can clear it there
+// even after the confirmed action switches the active tab (open_url opens a new one).
+let confirmPromptTabId = null
+
+/**
+ * Daemon is awaiting / done awaiting a spoken "confirm" for a high-risk command.
+ */
+function handleConfirmPrompt(message) {
+  showConfirmPrompt(message.state === "start", message.command).catch(error =>
+    console.error("[Xavier] confirm prompt toggle failed:", error)
+  )
+}
+
+/**
+ * Show/hide the on-page confirmation prompt. On show it targets the active tab and
+ * remembers it; on hide it clears that same tab (which may already be gone).
+ */
+async function showConfirmPrompt(active, command) {
+  if (active) {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true })
+    if (!tabs[0]) return
+
+    const tab = tabs[0]
+    confirmPromptTabId = tab.id
+    const message = { command: "confirm_prompt_on", args: { command } }
+    try {
+      await browser.tabs.sendMessage(tab.id, message)
+    } catch (error) {
+      if (isNoReceiverError(error)) {
+        await injectContentScript(tab)
+        await browser.tabs.sendMessage(tab.id, message)
+      }
+    }
+    return
+  }
+
+  if (confirmPromptTabId == null) return
+  const tabId = confirmPromptTabId
+  confirmPromptTabId = null
+  // Tab may be gone (tab_close confirmed) — a failed send just means nothing to clear.
+  browser.tabs.sendMessage(tabId, { command: "confirm_prompt_off", args: {} }).catch(() => {})
 }
 
 /**

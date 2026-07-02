@@ -22,6 +22,7 @@ if (window.__xavierContentLoaded) {
   const XAVIER_HINT_CLASS = "xavier-hint"
   const XAVIER_HIGHLIGHT_CONTAINER_ID = "xavier-highlight-overlay"
   const XAVIER_INPUT_INDICATOR_ID = "xavier-input-indicator"
+  const XAVIER_CONFIRM_PROMPT_ID = "xavier-confirm-prompt"
   const DEFAULT_SCROLL_AMOUNT = 200
 
   // Elements both the hint overlay and text highlighting can target.
@@ -159,6 +160,14 @@ if (window.__xavierContentLoaded) {
         case "input_mode_off":
           inputModeActive = false
           hideInputIndicator()
+          break
+
+        case "confirm_prompt_on":
+          showConfirmPrompt(args)
+          break
+
+        case "confirm_prompt_off":
+          hideConfirmPrompt()
           break
 
         default:
@@ -314,6 +323,49 @@ if (window.__xavierContentLoaded) {
     const badge = document.getElementById(XAVIER_INPUT_INDICATOR_ID)
     if (badge) {
       badge.remove()
+    }
+  }
+
+  // Readable action phrase per high-risk command (see HIGH_RISK in activation_policy).
+  const CONFIRM_ACTIONS = {
+    tab_close: "close this tab",
+    open_url: "open that page",
+  }
+
+  /**
+   * Fixed top-center banner shown while the daemon waits for a spoken "confirm" on a
+   * high-risk command. Voice-only (pointer-events: none); the daemon drives dismissal.
+   */
+  function showConfirmPrompt(args) {
+    hideConfirmPrompt()
+    const action = (args && CONFIRM_ACTIONS[args.command]) || "run that command"
+
+    const banner = document.createElement("div")
+    banner.id = XAVIER_CONFIRM_PROMPT_ID
+    banner.textContent = `Say “confirm” to ${action}, or “cancel”`
+    banner.style.cssText = `
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #015c4d;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      font-weight: bold;
+      pointer-events: none;
+      z-index: 2147483647;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.35);
+    `
+    document.body.appendChild(banner)
+  }
+
+  function hideConfirmPrompt() {
+    const banner = document.getElementById(XAVIER_CONFIRM_PROMPT_ID)
+    if (banner) {
+      banner.remove()
     }
   }
 
@@ -768,6 +820,7 @@ if (window.__xavierContentLoaded) {
     clearHighlights()
     hideHints()
     hideInputIndicator()
+    hideConfirmPrompt()
   }
 
   /**
