@@ -46,7 +46,7 @@ def test_command_grammar_includes_wake_word():
 
 
 def test_command_triggers():
-    assert command_triggers() == ("open url", "highlight", "input")
+    assert command_triggers() == ("open url", "highlight", "input", "link")
 
 
 def test_command_grammar_contains_input():
@@ -166,6 +166,81 @@ def test_highlight_all_number_words_stay_literal():
     cmd = parse_command("highlight twenty one")
     assert cmd["args"]["text"] == "twenty one"
     assert "ordinal" not in cmd["args"]
+
+
+def test_link_colloquial_hundred():
+    # Reading "143"/"153" aloud with the "hundred" dropped.
+    assert parse_command("link one forty three")["args"]["number"] == 143
+    assert parse_command("link one fifty three")["args"]["number"] == 153
+
+
+def test_link_colloquial_teen_hundred():
+    # "one fifteen" reads 115, not 16.
+    assert parse_command("link one fifteen")["args"]["number"] == 115
+
+
+def test_link_explicit_hundred_still_parses():
+    assert parse_command("link one hundred forty three")["args"]["number"] == 143
+
+
+def test_link_digit_by_digit():
+    # Reading the digits of 143 / 205 / 101 aloud.
+    assert parse_command("link one four three")["args"]["number"] == 143
+    assert parse_command("link two oh five")["args"]["number"] == 205
+    assert parse_command("link one oh one")["args"]["number"] == 101
+
+
+def test_link_and_connector():
+    assert parse_command("link one hundred and three")["args"]["number"] == 103
+    assert parse_command("link one hundred and forty three")["args"]["number"] == 143
+
+
+def test_highlight_trailing_digit_by_digit_with_zero():
+    # "two oh five" as a trailing position relies on "oh" being a number word.
+    cmd = parse_command("highlight expand two oh five")
+    assert cmd["args"]["text"] == "expand"
+    assert cmd["args"]["ordinal"] == 205
+
+
+def test_link_bare_zero_is_no_match():
+    # A pure-zero reading isn't a valid 1-based selection.
+    assert parse_command("link oh") is None
+
+
+def test_show_links_parses():
+    assert parse_command("show links")["name"] == "links_show"
+
+
+def test_bare_links_parses():
+    assert parse_command("links")["name"] == "links_show"
+
+
+def test_hide_links_parses():
+    # "hide links" reuses the shared overlay teardown.
+    assert parse_command("hide links")["name"] == "hints_hide"
+
+
+def test_link_select_digit():
+    cmd = parse_command("link 5")
+    assert cmd["name"] == "link_select"
+    assert cmd["args"]["number"] == 5
+
+
+def test_link_select_word():
+    assert parse_command("link five")["args"]["number"] == 5
+
+
+def test_link_select_compound_number():
+    assert parse_command("link twenty one")["args"]["number"] == 21
+
+
+def test_link_without_number_is_no_match():
+    assert parse_command("link") is None
+    assert parse_command("link foo") is None
+
+
+def test_command_grammar_contains_link():
+    assert "link" in command_grammar()
 
 
 def test_clear_highlights_parses():

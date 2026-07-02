@@ -53,6 +53,9 @@ PHRASE_COMMANDS = {
     "show hints": "hints_show",
     "hints": "hints_show",
     "hide hints": "hints_hide",
+    "show links": "links_show",
+    "links": "links_show",
+    "hide links": "hints_hide",
     "click": "click",
     "open in new tab": "open_new_tab",
     "open in a new tab": "open_new_tab",
@@ -100,13 +103,20 @@ TENS_NUMBERS = {
     "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
 }
 
+# Spoken zero, for digit-by-digit readings ("two oh five" = 205).
+ZERO_WORDS = {"oh", "zero"}
+
+# Connectors ignored inside a spoken number ("one hundred and three" = 103).
+NUMBER_CONNECTORS = {"and"}
+
 
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
-    words = {"highlight", "input", "end"}  # trigger-routed words, not PHRASE_COMMANDS entries
+    words = {"highlight", "input", "end", "link"}  # trigger-routed words, not PHRASE_COMMANDS entries
     words.update(ORDINAL_WORDS)   # bias "highlight <ordinal> <target>"
     words.update(SMALL_NUMBERS)   # bias trailing number words
     words.update(TENS_NUMBERS)
+    words.update(ZERO_WORDS)
     words.add("hundred")
     for phrase in PHRASE_COMMANDS:
         words.update(phrase.split())
@@ -120,7 +130,7 @@ def command_grammar(wake_phrase=None):
     more accurate. "[unk]" lets out-of-grammar audio map to an unknown token so
     random speech is rejected rather than forced onto a command word.
     """
-    words = {"click", "open", "url", "highlight", "input"}  # these route to Whisper
+    words = {"click", "open", "url", "highlight", "input", "link"}  # these route to Whisper
     words.update(CONFIRM_WORDS)       # gate the HIGH_RISK confirmation step
     words.update(CANCEL_WORDS)        # abort a pending confirmation
     for phrase in PHRASE_COMMANDS:
@@ -132,7 +142,7 @@ def command_grammar(wake_phrase=None):
 
 def command_triggers():
     """Normalized phrases that route an utterance to the Whisper (accuracy) path."""
-    return ("open url", "highlight", "input")
+    return ("open url", "highlight", "input", "link")
 
 
 def parse_command(transcript, confidence=1.0):
@@ -167,6 +177,12 @@ def parse_command(transcript, confidence=1.0):
                 args["literal"] = inner
         return _make_command("highlight_text", args, confidence, raw)
 
+    link_match = re.match(r'^link (.+)$', normalized)
+    if link_match:
+        number = _parse_number(link_match.group(1).split())
+        if number is not None:
+            return _make_command("link_select", {"number": number}, confidence, raw)
+
     url_match = re.match(r'^open url (.+)$', normalized)
     if url_match:
         url = _spoken_to_url(url_match.group(1))
@@ -183,24 +199,64 @@ def _numeric_token(token):
 
 
 def _is_number_word(token):
-    return token in SMALL_NUMBERS or token in TENS_NUMBERS or token == "hundred"
+    return (token in SMALL_NUMBERS or token in TENS_NUMBERS or token == "hundred"
+            or token in ZERO_WORDS or token in NUMBER_CONNECTORS)
+
+
+def _as_digit(word):
+    """Single 0-9 digit for a unit or zero word, else None (teens/tens aren't digits)."""
+    if word in ZERO_WORDS:
+        return 0
+    value = SMALL_NUMBERS.get(word)
+    return value if value is not None and value <= 9 else None
 
 
 def _words_to_number(words):
-    """Parse a run of cardinal number words to an int (1-999), or None."""
+    """
+    Parse spoken number words to an int (1-999), or None. Handles three ways of
+    reading a number aloud: place value ("one hundred forty three" = 143), dropped
+    "hundred" ("one forty three" = 143, "one fifteen" = 115; "twenty one" stays
+    21), and digit by digit ("one four three" = 143, "two oh five" = 205). "and"
+    is ignored as a connector.
+    """
+    words = [w for w in words if w not in NUMBER_CONNECTORS]
+    if not words:
+        return None
+
+    # Digit by digit: every word a single digit, two or more of them.
+    digits = [_as_digit(w) for w in words]
+    if len(words) >= 2 and all(d is not None for d in digits):
+        return int("".join(str(d) for d in digits)) or None
+
     current = 0
     seen = False
     for word in words:
-        if word in SMALL_NUMBERS:
-            current += SMALL_NUMBERS[word]
-        elif word in TENS_NUMBERS:
-            current += TENS_NUMBERS[word]
-        elif word == "hundred":
+        if word == "hundred":
             current = (current or 1) * 100
+        elif word in TENS_NUMBERS:
+            tens = TENS_NUMBERS[word]
+            current = current * 100 + tens if 1 <= current <= 9 else current + tens
+        elif word in SMALL_NUMBERS:
+            value = SMALL_NUMBERS[word]
+            if 10 <= value <= 19 and 1 <= current <= 9:
+                current = current * 100 + value
+            else:
+                current += value
+        elif word in ZERO_WORDS:
+            pass  # zero adds nothing in a place-value reading
         else:
             return None
         seen = True
-    return current if seen else None
+    return current if seen and current > 0 else None
+
+
+def _parse_number(tokens):
+    """A run of number tokens -> int: a single digit (5, 5th) or cardinal words (1-999)."""
+    if len(tokens) == 1:
+        digit = _numeric_token(tokens[0])
+        if digit is not None:
+            return digit
+    return _words_to_number(tokens)
 
 
 def _split_position(text):

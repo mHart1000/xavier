@@ -36,8 +36,9 @@ CONFIRM_TIMEOUT_SECONDS = 15
 
 LOW_RISK = frozenset({
     "scroll_up", "scroll_down", "page_up", "page_down",
-    "jump_top", "jump_bottom", "hints_show", "hints_hide", "focus_page",
+    "jump_top", "jump_bottom", "hints_show", "hints_hide", "links_show", "focus_page",
     "highlight_text", "highlight_next", "highlight_previous", "clear_highlights",
+    "link_select",  # numbered-link select is visual only; the click stays MEDIUM
     "input_text",  # typing into a field the user already focused; no confirmation
     "cancel",
 })

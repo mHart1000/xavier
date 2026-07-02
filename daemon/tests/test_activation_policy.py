@@ -117,6 +117,8 @@ def test_risk_tier_classification():
     assert risk_tier("click") == "medium"
     assert risk_tier("open_new_tab") == "medium"
     assert risk_tier("input_text") == "low"
+    assert risk_tier("links_show") == "low"
+    assert risk_tier("link_select") == "low"
 
 
 def test_input_enters_mode():

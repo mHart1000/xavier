@@ -54,10 +54,12 @@ if (window.__xavierContentLoaded) {
   ])
 
   let hintElements = []
+  let linkTargets = []
   let activeTarget = null
   let matchList = []
   let matchIndex = 0
   let inputModeActive = false
+  let suppressScrollDismiss = false
 
   /**
    * Listen for commands from background script
@@ -103,6 +105,14 @@ if (window.__xavierContentLoaded) {
 
         case "hints_hide":
           hideHints()
+          break
+
+        case "links_show":
+          showLinks()
+          break
+
+        case "link_select":
+          selectLink(args)
           break
 
         case "highlight_text":
@@ -173,6 +183,9 @@ if (window.__xavierContentLoaded) {
       browser.runtime.sendMessage({ type: "exit_input_mode" }).catch(() => {})
     }
   }, true)
+
+  // Manual scroll drifts the fixed overlays; dismiss them like a voice scroll does.
+  window.addEventListener("scroll", handleViewportScroll, { passive: true })
 
   /**
    * Scroll Commands
@@ -321,7 +334,57 @@ if (window.__xavierContentLoaded) {
    */
   function showHints() {
     hideHints()
+    const container = createOverlayContainer()
+    document.body.appendChild(container)
 
+    hintElements = []
+    const matchCache = new Map()
+
+    for (const el of collectLabelableElements()) {
+      const name = displayName(el)
+      if (!name) continue
+
+      const badge = document.createElement('div')
+      badge.className = XAVIER_HINT_CLASS
+      badge.textContent = numberedLabel(name, el, matchCache)
+      badge.style.cssText = hintBadgeCss(el.getBoundingClientRect())
+      container.appendChild(badge)
+      hintElements.push(badge)
+    }
+
+    console.log(`[Xavier Content] Showing ${hintElements.length} name labels`)
+  }
+
+  /**
+   * Number overlay - label each in-viewport clickable object "link N" (say "link N"
+   * to target it); numbers even unnamed elements. Mutually exclusive with "show hints".
+   */
+  function showLinks() {
+    hideHints()
+    const container = createOverlayContainer()
+    document.body.appendChild(container)
+
+    hintElements = []
+    linkTargets = []
+
+    for (const el of collectLabelableElements()) {
+      linkTargets.push(el)
+
+      const badge = document.createElement('div')
+      badge.className = XAVIER_HINT_CLASS
+      badge.textContent = `link ${linkTargets.length}`
+      badge.style.cssText = hintBadgeCss(el.getBoundingClientRect())
+      container.appendChild(badge)
+      hintElements.push(badge)
+    }
+
+    console.log(`[Xavier Content] Showing ${linkTargets.length} link labels`)
+  }
+
+  /**
+   * Full-viewport fixed container for the overlay (fixed, so badges use viewport coords).
+   */
+  function createOverlayContainer() {
     const container = document.createElement('div')
     container.id = XAVIER_HINT_CONTAINER_ID
     container.style.cssText = `
@@ -333,41 +396,30 @@ if (window.__xavierContentLoaded) {
       pointer-events: none;
       z-index: 2147483647;
     `
-    document.body.appendChild(container)
+    return container
+  }
 
-    hintElements = []
-    const matchCache = new Map()
-
-    for (const el of collectLabelableElements()) {
-      const name = displayName(el)
-      if (!name) continue
-
-      const rect = el.getBoundingClientRect()
-      const badge = document.createElement('div')
-      badge.className = XAVIER_HINT_CLASS
-      badge.textContent = numberedLabel(name, el, matchCache)
-      badge.style.cssText = `
-        position: absolute;
-        top: ${rect.top}px;
-        left: ${rect.left}px;
-        max-width: 200px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        background: #015c4d;
-        color: white;
-        padding: 1px 5px;
-        border-radius: 3px;
-        font: bold 11px/1 sans-serif;
-        pointer-events: none;
-        z-index: 2147483647;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-      `
-      container.appendChild(badge)
-      hintElements.push(badge)
-    }
-
-    console.log(`[Xavier Content] Showing ${hintElements.length} name labels`)
+  /**
+   * Badge style for one overlay label, positioned at the element's top-left.
+   */
+  function hintBadgeCss(rect) {
+    return `
+      position: absolute;
+      top: ${rect.top}px;
+      left: ${rect.left}px;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      background: rgba(1, 92, 77, 0.7);
+      color: rgba(255, 255, 255, 0.7);
+      padding: 1px 2px;
+      border-radius: 3px;
+      font: bold 10px/1 sans-serif;
+      pointer-events: none;
+      z-index: 2147483647;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    `
   }
 
   function hideHints() {
@@ -376,6 +428,7 @@ if (window.__xavierContentLoaded) {
       container.remove()
     }
     hintElements = []
+    linkTargets = []
   }
 
   /**
@@ -501,6 +554,29 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
+   * Select the Nth "show links" link as the active target for "click"/"open in new tab".
+   */
+  function selectLink(args) {
+    const number = args && args.number
+
+    if (!number) {
+      throw new Error("Missing required argument: number")
+    }
+
+    const el = linkTargets[number - 1]
+    if (!el || !document.contains(el)) {
+      throw new Error(`No link numbered ${number}`)
+    }
+
+    clearHighlights()
+    matchList = [el]
+    matchIndex = 0
+    applyMatch()
+
+    console.log(`[Xavier Content] Selected link ${number}`)
+  }
+
+  /**
    * Ordered match list for "highlight" + "next" cycling.
    *
    * Score (lower = better): a visible-text match (clickable set) beats an exact
@@ -595,7 +671,7 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Click the active highlighted target, then clear the highlight.
+   * Click the active highlighted target, then clear the highlight and hide the overlay.
    */
   function clickActiveTarget() {
     if (!activeTarget) {
@@ -605,6 +681,7 @@ if (window.__xavierContentLoaded) {
     const target = activeTarget
     // Clear first so a navigation triggered by the click leaves no stale overlay.
     clearHighlights()
+    hideHints()
     target.click()
 
     console.log("[Xavier Content] Clicked active target")
@@ -612,8 +689,9 @@ if (window.__xavierContentLoaded) {
 
   /**
    * Open the active highlighted target's link in a new background tab (focus
-   * stays on the current tab), then clear the highlight. Tab creation belongs to
-   * the background script, so resolve the URL here and hand it off.
+   * stays on the current tab), then clear the highlight; the overlay stays, to
+   * open several in a row. Tab creation belongs to the background script, so
+   * resolve the URL here and hand it off.
    */
   function openActiveTargetInNewTab() {
     if (!activeTarget) {
@@ -656,7 +734,10 @@ if (window.__xavierContentLoaded) {
     activeTarget = matchList[matchIndex]
 
     if (!isInViewport(activeTarget)) {
+      // Suppress the scroll-dismiss for our own scroll so it keeps the new highlight.
+      suppressScrollDismiss = true
       activeTarget.scrollIntoView({ block: "center", behavior: "instant" })
+      setTimeout(() => { suppressScrollDismiss = false }, 150)
     }
 
     drawHighlight(activeTarget)
@@ -687,6 +768,17 @@ if (window.__xavierContentLoaded) {
     clearHighlights()
     hideHints()
     hideInputIndicator()
+  }
+
+  /**
+   * Dismiss overlays on a user scroll (they're fixed and would drift); no-op if none up.
+   */
+  function handleViewportScroll() {
+    if (suppressScrollDismiss) return
+    if (document.getElementById(XAVIER_HINT_CONTAINER_ID) ||
+        document.getElementById(XAVIER_HIGHLIGHT_CONTAINER_ID)) {
+      handleCancel()
+    }
   }
 
   /**
