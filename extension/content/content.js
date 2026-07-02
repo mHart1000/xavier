@@ -671,7 +671,8 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Click the active highlighted target, then clear the highlight.
+   * Click the active highlighted target, then clear the highlight and hide the
+   * hint/link overlay — the pick is complete.
    */
   function clickActiveTarget() {
     if (!activeTarget) {
@@ -681,6 +682,7 @@ if (window.__xavierContentLoaded) {
     const target = activeTarget
     // Clear first so a navigation triggered by the click leaves no stale overlay.
     clearHighlights()
+    hideHints()
     target.click()
 
     console.log("[Xavier Content] Clicked active target")
@@ -688,7 +690,8 @@ if (window.__xavierContentLoaded) {
 
   /**
    * Open the active highlighted target's link in a new background tab (focus
-   * stays on the current tab), then clear the highlight. Tab creation belongs to
+   * stays on the current tab), then clear the highlight. The hint/link overlay
+   * stays up so several links can be opened in a row. Tab creation belongs to
    * the background script, so resolve the URL here and hand it off.
    */
   function openActiveTargetInNewTab() {
