@@ -284,7 +284,7 @@ Example:
 1. **Active target.** All commands act on the currently active tab in the focused window.
 2. **Sequential execution.** The extension processes commands in receipt order; no parallelism.
 3. **Hint code normalization.** Hint codes are case-insensitive and whitespace-stripped. The daemon should send canonical uppercase (`"AF"`); the extension also accepts `"af"` and `"a f"`.
-4. **Transient overlays auto-dismiss.** The hint/link overlay hides on: explicit `hints_hide` or `cancel`, a successful `click`, and navigation/URL change. The `highlight_text` target clears on: explicit `clear_highlights` or `cancel`, navigation/URL change, a new `highlight_text`, and after a successful `click`. **Both** also clear on any viewport-moving command (`scroll_*`, `page_*`, `jump_*`), since the fixed overlays would otherwise drift onto arbitrary elements.
+4. **Transient overlays auto-dismiss.** The hint/link overlay hides on: explicit `hints_hide` or `cancel`, a successful `click`, and navigation/URL change. The `highlight_text` target clears on: explicit `clear_highlights` or `cancel`, navigation/URL change, a new `highlight_text`, and after a successful `click`. **Both** also clear on any viewport-moving command (`scroll_*`, `page_*`, `jump_*`) or a manual page scroll, since the fixed overlays would otherwise drift onto arbitrary elements.
 5. **Focus restoration.** After `focus_address`, `scroll_*` commands may not affect the page until `focus_page` is sent.
 6. **Silent no-ops.** Some commands have no effect but are not errors (e.g., `nav_back` with no history, `scroll_down` at end of page). The extension still returns `ack`.
 

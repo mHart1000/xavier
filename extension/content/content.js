@@ -59,6 +59,7 @@ if (window.__xavierContentLoaded) {
   let matchList = []
   let matchIndex = 0
   let inputModeActive = false
+  let suppressScrollDismiss = false
 
   /**
    * Listen for commands from background script
@@ -182,6 +183,9 @@ if (window.__xavierContentLoaded) {
       browser.runtime.sendMessage({ type: "exit_input_mode" }).catch(() => {})
     }
   }, true)
+
+  // Manual scroll drifts the fixed overlays; dismiss them like a voice scroll does.
+  window.addEventListener("scroll", handleViewportScroll, { passive: true })
 
   /**
    * Scroll Commands
@@ -352,10 +356,8 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Number overlay - label each clickable object in the viewport with "link N",
-   * the number to speak ("link N") to target it. Mutually exclusive with the name
-   * overlay: hideHints() clears whichever is showing (shared container). Numbers
-   * every labelable element, including those with no speakable name.
+   * Number overlay - label each in-viewport clickable object "link N" (say "link N"
+   * to target it); numbers even unnamed elements. Mutually exclusive with "show hints".
    */
   function showLinks() {
     hideHints()
@@ -380,8 +382,7 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Full-viewport fixed container for the hint/link overlay. Fixed positioning
-   * means badges use viewport coords (getBoundingClientRect, no scroll offset).
+   * Full-viewport fixed container for the overlay (fixed, so badges use viewport coords).
    */
   function createOverlayContainer() {
     const container = document.createElement('div')
@@ -553,8 +554,7 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Select the Nth link from the last "show links" as the active target, so
-   * "click"/"open in new tab" act on it. Reuses the highlight machinery.
+   * Select the Nth "show links" link as the active target for "click"/"open in new tab".
    */
   function selectLink(args) {
     const number = args && args.number
@@ -671,8 +671,7 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
-   * Click the active highlighted target, then clear the highlight and hide the
-   * hint/link overlay — the pick is complete.
+   * Click the active highlighted target, then clear the highlight and hide the overlay.
    */
   function clickActiveTarget() {
     if (!activeTarget) {
@@ -690,9 +689,9 @@ if (window.__xavierContentLoaded) {
 
   /**
    * Open the active highlighted target's link in a new background tab (focus
-   * stays on the current tab), then clear the highlight. The hint/link overlay
-   * stays up so several links can be opened in a row. Tab creation belongs to
-   * the background script, so resolve the URL here and hand it off.
+   * stays on the current tab), then clear the highlight; the overlay stays, to
+   * open several in a row. Tab creation belongs to the background script, so
+   * resolve the URL here and hand it off.
    */
   function openActiveTargetInNewTab() {
     if (!activeTarget) {
@@ -735,7 +734,10 @@ if (window.__xavierContentLoaded) {
     activeTarget = matchList[matchIndex]
 
     if (!isInViewport(activeTarget)) {
+      // Suppress the scroll-dismiss for our own scroll so it keeps the new highlight.
+      suppressScrollDismiss = true
       activeTarget.scrollIntoView({ block: "center", behavior: "instant" })
+      setTimeout(() => { suppressScrollDismiss = false }, 150)
     }
 
     drawHighlight(activeTarget)
@@ -766,6 +768,17 @@ if (window.__xavierContentLoaded) {
     clearHighlights()
     hideHints()
     hideInputIndicator()
+  }
+
+  /**
+   * Dismiss overlays on a user scroll (they're fixed and would drift); no-op if none up.
+   */
+  function handleViewportScroll() {
+    if (suppressScrollDismiss) return
+    if (document.getElementById(XAVIER_HINT_CONTAINER_ID) ||
+        document.getElementById(XAVIER_HIGHLIGHT_CONTAINER_ID)) {
+      handleCancel()
+    }
   }
 
   /**
