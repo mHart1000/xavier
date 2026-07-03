@@ -36,6 +36,7 @@ class Listener:
         self.policy = None
         self.thread = None
         self._input_mode_prev = False
+        self._confirm_prev = None
         self._stop = threading.Event()
 
     def start(self):
@@ -67,6 +68,7 @@ class Listener:
 
         self._stop.clear()
         self._input_mode_prev = False
+        self._confirm_prev = None
 
         self.segmenter = Segmenter(
             sample_rate=sample_rate,
@@ -98,6 +100,18 @@ class Listener:
             self._input_mode_prev = active
             self.emit_event({"type": "input_mode", "state": "start" if active else "end"})
 
+    def _sync_confirm_indicator(self):
+        """Emit a confirm event when a high-risk command starts or stops awaiting a
+        spoken 'confirm'. Called each frame, so it also fires the 'end' when the
+        confirm window times out with no further utterance."""
+        pending = self.policy.confirm_pending()
+        if pending != self._confirm_prev:
+            self._confirm_prev = pending
+            if pending:
+                self.emit_event({"type": "confirm", "state": "start", "command": pending})
+            else:
+                self.emit_event({"type": "confirm", "state": "end"})
+
     def _run(self):
         threshold = self.config["vad"]["threshold"]
         sample_rate = self.config["audio"]["sample_rate"]
@@ -108,6 +122,7 @@ class Listener:
                 break
 
             self._sync_input_mode_indicator()
+            self._sync_confirm_indicator()
 
             prob = self.vad.is_speech(frame)
             is_speech = prob >= threshold
@@ -165,6 +180,12 @@ class Listener:
         if self.policy is not None and self.policy.exit_input_mode():
             self._input_mode_prev = False
             self.emit_event({"type": "input_mode", "state": "end"})
+        # Likewise clear a dangling confirm prompt so releasing the mic doesn't strand it.
+        if self.policy is not None:
+            self.policy.clear_pending_confirm()
+        if self._confirm_prev is not None:
+            self._confirm_prev = None
+            self.emit_event({"type": "confirm", "state": "end"})
         logger.info("Listener paused (mic released)")
 
     def resume(self):

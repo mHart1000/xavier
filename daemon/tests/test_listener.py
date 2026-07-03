@@ -129,6 +129,24 @@ def test_input_mode_indicator_emits_on_transition():
     assert events[-1] == {"type": "input_mode", "state": "end"}
 
 
+def test_confirm_indicator_emits_on_transition():
+    events = []
+    lis = Listener(make_config(), emit_command=lambda c: None, emit_event=events.append)
+    lis.policy = SimpleNamespace(confirm_pending=lambda: None)
+
+    lis._sync_confirm_indicator()
+    assert events == []                       # nothing pending → no event
+
+    lis.policy.confirm_pending = lambda: "tab_close"
+    lis._sync_confirm_indicator()
+    lis._sync_confirm_indicator()             # idempotent while pending
+    assert events == [{"type": "confirm", "state": "start", "command": "tab_close"}]
+
+    lis.policy.confirm_pending = lambda: None
+    lis._sync_confirm_indicator()
+    assert events[-1] == {"type": "confirm", "state": "end"}
+
+
 def test_exit_input_mode_delegates_to_policy():
     lis = Listener(make_config(), emit_command=lambda c: None)
     lis.policy = MagicMock()

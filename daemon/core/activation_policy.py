@@ -119,6 +119,22 @@ class ActivationPolicy:
         """True once input mode has been silent past the timeout."""
         return self.in_input_mode and now >= self.input_deadline
 
+    def confirm_pending(self, now=None):
+        """Name of the high-risk command awaiting a spoken 'confirm', or None when
+        nothing is pending or the confirm window has already elapsed. Lets the
+        listener drive an on-screen prompt without reaching into policy internals."""
+        now = time.monotonic() if now is None else now
+        if self.pending_command is not None and now < self.pending_until:
+            return self.pending_command["name"]
+        return None
+
+    def clear_pending_confirm(self):
+        """Drop any pending high-risk confirmation (e.g. when the mic is released).
+        Returns True if one was pending."""
+        was_pending = self.pending_command is not None
+        self.pending_command = None
+        return was_pending
+
     def evaluate(self, transcript, confidence=1.0, now=None):
         now = time.monotonic() if now is None else now
         text = normalize_transcript(transcript)

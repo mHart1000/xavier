@@ -89,6 +89,27 @@ def test_confirmation_times_out():
     assert reason == "no_match"  # pending expired; "confirm" alone is not a command
 
 
+def test_confirm_pending_reports_command_while_active():
+    policy = make_policy()
+    assert policy.confirm_pending(now=0) is None
+    policy.evaluate("close tab", now=0)
+    assert policy.confirm_pending(now=1) == "tab_close"
+
+
+def test_confirm_pending_expires_with_window():
+    policy = make_policy()
+    policy.evaluate("close tab", now=0)
+    assert policy.confirm_pending(now=100) is None  # > CONFIRM_TIMEOUT_SECONDS
+
+
+def test_clear_pending_confirm():
+    policy = make_policy()
+    policy.evaluate("close tab", now=0)
+    assert policy.clear_pending_confirm() is True
+    assert policy.confirm_pending(now=1) is None
+    assert policy.clear_pending_confirm() is False
+
+
 def test_continuous_disabled_without_wake_rejected():
     cmd, reason = make_policy(allow_continuous=False).evaluate("scroll down", now=0)
     assert cmd is None
