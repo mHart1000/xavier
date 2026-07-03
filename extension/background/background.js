@@ -109,6 +109,19 @@ function handleListeningState(message) {
   renderBadge()
   browser.runtime.sendMessage({ type: "listening_state_changed", state: listeningState() })
     .catch(() => {})  // no popup open
+  if (message.state === "deafened" || message.state === "listening") {
+    flashListeningStateInTab(message.state)
+  }
+}
+
+function flashListeningStateInTab(state) {
+  browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+    if (!tabs[0]) return
+    browser.tabs.sendMessage(tabs[0].id, {
+      command: "listening_state_flash",
+      args: { state }
+    }).catch(() => {})  // tab may not have the content script; that's fine
+  })
 }
 
 /**
@@ -122,6 +135,9 @@ function renderBadge() {
   } else if (listenState === "deafened") {
     browser.action.setBadgeText({ text: "–" })
     browser.action.setBadgeBackgroundColor({ color: "#6b6b6b" })
+  } else if (listenState === "off") {
+    browser.action.setBadgeText({ text: "–" })
+    browser.action.setBadgeBackgroundColor({ color: "#000000" })
   } else {
     browser.action.setBadgeText({ text: "" })
   }

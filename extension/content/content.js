@@ -170,6 +170,10 @@ if (window.__xavierContentLoaded) {
           hideConfirmPrompt()
           break
 
+        case "listening_state_flash":
+          flashListeningState(args)
+          break
+
         default:
           console.warn("[Xavier Content] Unknown command:", command)
           sendResponse({ error: "Unknown command" })
@@ -375,6 +379,41 @@ if (window.__xavierContentLoaded) {
     if (banner) {
       banner.remove()
     }
+  }
+
+  const XAVIER_STATE_FLASH_ID = "xavier-state-flash"
+
+  function flashListeningState(args) {
+    const existing = document.getElementById(XAVIER_STATE_FLASH_ID)
+    if (existing) {
+      clearTimeout(existing._flashTimer)
+      existing.remove()
+    }
+
+    const label = args && args.state === "deafened" ? "Deafening" : "Listening"
+
+    const banner = document.createElement("div")
+    banner.id = XAVIER_STATE_FLASH_ID
+    banner.style.cssText = `
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #015c4d;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      font-weight: bold;
+      pointer-events: none;
+      z-index: 2147483647;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.35);
+    `
+    banner.textContent = label
+    document.body.appendChild(banner)
+
+    banner._flashTimer = setTimeout(() => banner.remove(), 1500)
   }
 
   /**
