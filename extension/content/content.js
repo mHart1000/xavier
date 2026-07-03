@@ -342,7 +342,6 @@ if (window.__xavierContentLoaded) {
 
     const banner = document.createElement("div")
     banner.id = XAVIER_CONFIRM_PROMPT_ID
-    banner.textContent = `Say “confirm” to ${action}, or “cancel”`
     banner.style.cssText = `
       position: fixed;
       top: 16px;
@@ -353,12 +352,21 @@ if (window.__xavierContentLoaded) {
       padding: 12px 20px;
       border-radius: 10px;
       font-family: system-ui, sans-serif;
-      font-size: 15px;
-      font-weight: bold;
       pointer-events: none;
       z-index: 2147483647;
       box-shadow: 0 3px 12px rgba(0,0,0,0.35);
+      text-align: center;
     `
+
+    const question = document.createElement("div")
+    question.textContent = `${action}?`
+    question.style.cssText = "font-size: 15px; font-weight: bold;"
+
+    const hint = document.createElement("div")
+    hint.textContent = `“confirm” or “cancel”`
+    hint.style.cssText = "font-size: 13px; opacity: 0.85; margin-top: 3px;"
+
+    banner.append(question, hint)
     document.body.appendChild(banner)
   }
 
