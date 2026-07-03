@@ -15,11 +15,13 @@ logger = logging.getLogger(__name__)
 
 class VoskRecognizer(SpeechRecognizer):
 
-    def __init__(self, config, sample_rate=16000, grammar=None):
+    def __init__(self, config, sample_rate=16000, grammar=None, wake_grammar=None):
         super().__init__(config, sample_rate)
         self.grammar = grammar
+        self.wake_grammar = wake_grammar
         self.model = None
         self.recognizer = None
+        self.wake_recognizer = None
 
     def load(self):
         from vosk import Model, KaldiRecognizer
@@ -35,17 +37,25 @@ class VoskRecognizer(SpeechRecognizer):
         else:
             self.recognizer = KaldiRecognizer(self.model, self.sample_rate)
             logger.info("Vosk model loaded")
+        # Second recognizer shares the loaded Model, so it's cheap.
+        if self.wake_grammar is not None:
+            self.wake_recognizer = KaldiRecognizer(
+                self.model, self.sample_rate, json.dumps(self.wake_grammar)
+            )
 
-    def transcribe(self, pcm16, accurate=False):
+    def transcribe(self, pcm16, accurate=False, wake_only=False):
         # No separate accuracy path; `accurate` is ignored.
-        if self.recognizer is None:
+        recognizer = self.recognizer
+        if wake_only and self.wake_recognizer is not None:
+            recognizer = self.wake_recognizer
+        if recognizer is None:
             return Transcript(text="", confidence=0.0)
 
-        self.recognizer.AcceptWaveform(pcm16)
-        result = json.loads(self.recognizer.FinalResult())
+        recognizer.AcceptWaveform(pcm16)
+        result = json.loads(recognizer.FinalResult())
         # Reset so the next utterance starts clean (no-op on older vosk).
         try:
-            self.recognizer.Reset()
+            recognizer.Reset()
         except AttributeError:
             pass
         # Vosk gives no per-utterance confidence.
@@ -53,4 +63,5 @@ class VoskRecognizer(SpeechRecognizer):
 
     def close(self):
         self.recognizer = None
+        self.wake_recognizer = None
         self.model = None

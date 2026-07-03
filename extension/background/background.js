@@ -12,10 +12,15 @@ const NATIVE_HOST_NAME = "com.xavier.voice_browser"
 
 let nativePort = null
 
-// Whether the daemon should be listening. In-memory for the session; the open
-// native port keeps this background script alive, and we re-assert it on every
-// (re)connect so an "off" choice survives a daemon restart (which defaults on).
-let listening = true
+// Desired daemon state: "listening" | "deafened" | "off". In-memory for the
+// session; the open native port keeps this background script alive, and we
+// re-assert it on every (re)connect so a deafen/off choice survives a daemon
+// restart (which defaults on). Voice toggles arrive as listening_state events.
+let listenState = "listening"
+const LISTEN_STATES = ["listening", "deafened", "off"]
+
+// Whether the daemon is in dictation mode; combined with listenState for the badge.
+let inputModeActive = false
 
 /**
  * Initialize native messaging connection
@@ -73,6 +78,10 @@ function handleNativeMessage(message) {
       handleConfirmPrompt(message)
       break
 
+    case "listening_state":
+      handleListeningState(message)
+      break
+
     default:
       console.warn("[Xavier] Unknown message type:", message.type)
   }
@@ -83,13 +92,39 @@ function handleNativeMessage(message) {
  */
 function handleInputMode(message) {
   const active = message.state === "start"
-  browser.action.setBadgeText({ text: active ? "●" : "" })
-  if (active) {
-    browser.action.setBadgeBackgroundColor({ color: "#ff6b00" })
-  }
+  inputModeActive = active
+  renderBadge()
   showInputIndicator(active).catch(error =>
     console.error("[Xavier] input indicator toggle failed:", error)
   )
+}
+
+/**
+ * Daemon listening state changed (voice or popup initiated). Store it, update
+ * the badge, and let an open popup re-render.
+ */
+function handleListeningState(message) {
+  if (!LISTEN_STATES.includes(message.state)) return
+  listenState = message.state
+  renderBadge()
+  browser.runtime.sendMessage({ type: "listening_state_changed", state: listeningState() })
+    .catch(() => {})  // no popup open
+}
+
+/**
+ * Toolbar badge derived from both flags, so event order doesn't matter:
+ * input mode wins, then deafened, else clear.
+ */
+function renderBadge() {
+  if (inputModeActive) {
+    browser.action.setBadgeText({ text: "●" })
+    browser.action.setBadgeBackgroundColor({ color: "#ff6b00" })
+  } else if (listenState === "deafened") {
+    browser.action.setBadgeText({ text: "–" })
+    browser.action.setBadgeBackgroundColor({ color: "#6b6b6b" })
+  } else {
+    browser.action.setBadgeText({ text: "" })
+  }
 }
 
 /**
@@ -372,8 +407,9 @@ async function injectContentScript(tab) {
 }
 
 /**
- * Tell the daemon whether to listen. Idempotent on the daemon side, so it is
- * safe to re-assert after every connect.
+ * Tell the daemon the desired listening state. Idempotent on the daemon side,
+ * so it is safe to re-assert after every connect. `enabled` kept for protocol
+ * compatibility with daemons that predate the tri-state.
  */
 function pushListeningState() {
   if (!nativePort) return
@@ -381,7 +417,7 @@ function pushListeningState() {
   nativePort.postMessage({
     type: "set_listening",
     id: String(Date.now()),
-    args: { enabled: listening }
+    args: { state: listenState, enabled: listenState !== "off" }
   })
 }
 
@@ -450,8 +486,11 @@ browser.runtime.onMessage.addListener((message, sender) => {
   }
 
   if (message.type === "set_listening") {
-    listening = Boolean(message.enabled)
-    pushListeningState()
+    if (LISTEN_STATES.includes(message.state)) {
+      listenState = message.state
+      renderBadge()
+      pushListeningState()
+    }
     return Promise.resolve(listeningState())
   }
 
@@ -464,7 +503,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
 })
 
 function listeningState() {
-  return { listening, connected: nativePort !== null }
+  return { state: listenState, connected: nativePort !== null }
 }
 
 // Initialize on startup

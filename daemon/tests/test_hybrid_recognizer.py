@@ -9,10 +9,12 @@ class FakeRecognizer:
         self.result = Transcript(text=text, confidence=confidence)
         self.calls = 0
         self.last_accurate = None
+        self.last_wake_only = None
 
-    def transcribe(self, pcm16, accurate=False):
+    def transcribe(self, pcm16, accurate=False, wake_only=False):
         self.calls += 1
         self.last_accurate = accurate
+        self.last_wake_only = wake_only
         return self.result
 
     def load(self):
@@ -129,3 +131,31 @@ def test_accurate_falls_back_to_vosk_when_whisper_disabled():
     out = h.transcribe(b"", accurate=True)
     assert h.whisper.calls == 0
     assert out.text == "scroll down"
+
+
+def test_wake_only_routes_to_vosk_wake_grammar():
+    h = make_hybrid("browser listen", wake_phrase="browser")
+    out = h.transcribe(b"", wake_only=True)
+    assert h.vosk.last_wake_only is True
+    assert h.whisper.calls == 0
+    assert out.text == "browser listen"
+
+
+def test_wake_only_never_runs_whisper_for_triggers():
+    # Trigger-looking text must not reach the Whisper path while deafened.
+    h = make_hybrid("open url example dot com", wake_phrase="browser")
+    h.transcribe(b"", wake_only=True)
+    assert h.whisper.calls == 0
+
+
+def test_wake_only_filters_unk_tokens():
+    h = make_hybrid("[unk] browser listen [unk]", wake_phrase="browser")
+    out = h.transcribe(b"", wake_only=True)
+    assert out.text == "browser listen"
+
+
+def test_wake_only_all_unk_is_empty():
+    h = make_hybrid("[unk] [unk]", wake_phrase="browser")
+    out = h.transcribe(b"", wake_only=True)
+    assert out.text == ""
+    assert out.confidence == 0.0

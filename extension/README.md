@@ -7,13 +7,16 @@ Privacy-first voice control extension for Firefox, communicating with a local da
 - `manifest.json` - Extension manifest with permissions and configuration
 - `background/background.js` - Background script handling native messaging and browser actions
 - `content/content.js` - Content script executing page-level actions and hint overlays
-- `popup/` - Toolbar popup with the on/off power button
+- `popup/` - Toolbar popup with the power and deafen buttons
 
 ## Features 
 
 ### Power Toggle
 - Toolbar popup with a power button to turn voice control on/off
 - Off releases the microphone (the daemon stops listening)
+- A deafen button keeps the mic open but ignores everything except the wake
+  phrase; also togglable by voice ("arianna deafen" / "arianna listen"),
+  reflected live in the popup and as a gray "–" toolbar badge
 
 ### Navigation
 - Back, forward, reload

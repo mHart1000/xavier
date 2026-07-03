@@ -27,7 +27,7 @@ DEFAULTS = {
     "vad": {"engine": "silero", "model_path": "models/silero_vad.onnx", "threshold": 0.5},
     "listener": {
         "mode": "vad_continuous",
-        "wake_phrase": "browser",
+        "wake_phrase": "arianna",
         "session_timeout_seconds": 300,
         "pre_roll_ms": 500,
         "min_speech_ms": 300,

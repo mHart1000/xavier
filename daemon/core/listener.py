@@ -37,7 +37,20 @@ class Listener:
         self.thread = None
         self._input_mode_prev = False
         self._confirm_prev = None
+        self._deafened_prev = False
         self._stop = threading.Event()
+
+    @property
+    def state(self):
+        """Current listening state: "off" (mic released), "deafened", or "listening"."""
+        if self.audio is None:
+            return "off"
+        if self.policy is not None and self.policy.deafened:
+            return "deafened"
+        return "listening"
+
+    def _emit_state(self):
+        self.emit_event({"type": "listening_state", "state": self.state})
 
     def start(self):
         listener_cfg = self.config["listener"]
@@ -57,6 +70,7 @@ class Listener:
         # Models load once; the mic + worker thread are cycled by pause()/resume()
         # without paying for a reload.
         self._start_capture()
+        self._emit_state()
         logger.info("Listener started (mode=%s)", listener_cfg["mode"])
 
     def _start_capture(self):
@@ -69,6 +83,7 @@ class Listener:
         self._stop.clear()
         self._input_mode_prev = False
         self._confirm_prev = None
+        self._deafened_prev = self.policy.deafened
 
         self.segmenter = Segmenter(
             sample_rate=sample_rate,
@@ -112,6 +127,14 @@ class Listener:
             else:
                 self.emit_event({"type": "confirm", "state": "end"})
 
+    def _sync_listening_state_indicator(self):
+        """Emit a listening_state event when the deafened flag flips. Called each
+        frame so voice- and extension-initiated flips are both announced."""
+        deafened = self.policy.deafened
+        if deafened != self._deafened_prev:
+            self._deafened_prev = deafened
+            self._emit_state()
+
     def _run(self):
         threshold = self.config["vad"]["threshold"]
         sample_rate = self.config["audio"]["sample_rate"]
@@ -123,6 +146,7 @@ class Listener:
 
             self._sync_input_mode_indicator()
             self._sync_confirm_indicator()
+            self._sync_listening_state_indicator()
 
             prob = self.vad.is_speech(frame)
             is_speech = prob >= threshold
@@ -153,7 +177,9 @@ class Listener:
             duration_ms = len(utterance) // 2 / sample_rate * 1000
             logger.info("utterance collected (%.0f ms) — transcribing…", duration_ms)
             self.vad.reset()
-            transcript = self.recognizer.transcribe(utterance, accurate=self.policy.in_input_mode)
+            transcript = self.recognizer.transcribe(
+                utterance, accurate=self.policy.in_input_mode, wake_only=self.policy.deafened
+            )
             if not transcript.text:
                 logger.info("empty transcript (utterance %.0f ms)", duration_ms)
                 continue
@@ -169,6 +195,7 @@ class Listener:
     def pause(self):
         """Release the mic and stop the worker thread, keeping models loaded so
         resume() is cheap. Safe to call when already paused."""
+        was_running = self.audio is not None
         self._stop.set()
         if self.audio is not None:
             self.audio.stop()
@@ -186,6 +213,8 @@ class Listener:
         if self._confirm_prev is not None:
             self._confirm_prev = None
             self.emit_event({"type": "confirm", "state": "end"})
+        if was_running:
+            self._emit_state()
         logger.info("Listener paused (mic released)")
 
     def resume(self):
@@ -194,7 +223,20 @@ class Listener:
             return
         self.vad.reset()
         self._start_capture()
+        self._emit_state()
         logger.info("Listener resumed")
+
+    def set_state(self, state):
+        """Apply a listening state ("listening" | "deafened" | "off") requested by
+        the extension. Idempotent. The deafened flag is set before resume() so the
+        (re)start announces the right state; deafened<->listening flips while
+        already running are announced by the frame-loop sync instead."""
+        if state == "off":
+            self.pause()
+            return
+        if self.policy is not None:
+            self.policy.set_deafened(state == "deafened")
+        self.resume()
 
     def exit_input_mode(self):
         """External request to leave input mode (e.g. the extension's exit hotkey).

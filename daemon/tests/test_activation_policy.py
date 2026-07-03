@@ -202,6 +202,93 @@ def test_wake_then_input_with_payload():
     assert cmd["args"]["text"] == "hello there"
 
 
+def test_deafen_phrase_enters_deafened():
+    policy = make_policy()
+    cmd, reason = policy.evaluate("browser deafen", now=0)
+    assert cmd is None
+    assert reason == "deafen"
+    assert policy.deafened is True
+
+
+def test_commands_ignored_while_deafened():
+    policy = make_policy()
+    policy.evaluate("browser deafen", now=0)
+    for phrase in ("scroll down", "close tab", "input hello"):
+        cmd, reason = policy.evaluate(phrase, now=1)
+        assert cmd is None
+        assert reason == "deafened"
+
+
+def test_listen_phrase_restores_listening():
+    policy = make_policy()
+    policy.evaluate("browser deafen", now=0)
+    cmd, reason = policy.evaluate("browser listen", now=1)
+    assert cmd is None
+    assert reason == "undeafen"
+    assert policy.deafened is False
+    cmd, reason = policy.evaluate("scroll down", now=2)
+    assert reason == "ok"
+    assert cmd["name"] == "scroll_down"
+
+
+def test_deafen_while_deafened_is_noop():
+    policy = make_policy()
+    policy.evaluate("browser deafen", now=0)
+    cmd, reason = policy.evaluate("browser deafen", now=1)
+    assert cmd is None
+    assert reason == "deafen"
+    assert policy.deafened is True
+
+
+def test_listen_while_listening_touches_session():
+    policy = make_policy(allow_continuous=False)
+    cmd, reason = policy.evaluate("browser listen", now=0)
+    assert cmd is None
+    assert reason == "already_listening"
+    cmd, reason = policy.evaluate("scroll down", now=1)  # session was opened
+    assert reason == "ok"
+
+
+def test_deafen_exits_input_mode():
+    # Intercepted before the input-mode branch, so the wake phrase works mid-dictation.
+    policy = make_policy()
+    policy.evaluate("input", now=0)
+    assert policy.in_input_mode is True
+    cmd, reason = policy.evaluate("browser deafen", now=1)
+    assert reason == "deafen"
+    assert policy.in_input_mode is False
+
+
+def test_deafen_clears_pending_confirm():
+    policy = make_policy()
+    policy.evaluate("close tab", now=0)
+    assert policy.confirm_pending(now=1) == "tab_close"
+    policy.evaluate("browser deafen", now=1)
+    assert policy.confirm_pending(now=2) is None
+
+
+def test_set_deafened_external_path():
+    policy = make_policy()
+    assert policy.set_deafened(True) is True
+    assert policy.set_deafened(True) is False   # no change
+    cmd, reason = policy.evaluate("scroll down", now=0)
+    assert reason == "deafened"
+    assert policy.set_deafened(False) is True
+
+
+def test_empty_wake_phrase_disables_voice_toggle():
+    listener = {"mode": "vad_continuous", "wake_phrase": "", "session_timeout_seconds": 300,
+                "pre_roll_ms": 500, "min_speech_ms": 300, "end_silence_ms": 700,
+                "max_segment_seconds": 8}
+    safety = {"confirm_high_risk_commands": True,
+              "allow_continuous_commands_without_wake": True}
+    policy = ActivationPolicy(listener, safety)
+    assert policy.deafen_phrase is None
+    cmd, reason = policy.evaluate("deafen", now=0)
+    assert reason == "no_match"
+    assert policy.set_deafened(True) is True    # popup path still works
+
+
 def test_input_silence_timeout_and_refresh():
     policy = make_policy()  # default input_silence_timeout = 5
     policy.evaluate("input", now=0)            # deadline = 5

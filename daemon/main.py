@@ -107,18 +107,22 @@ def handle_ping(message, logger):
 
 
 def handle_set_listening(message, logger):
-    # Power toggle from the popup: pause releases the mic, resume reopens it.
+    # "off" releases the mic; "deafened" keeps it open but gates on the wake phrase.
+    # Legacy `enabled` maps to listening/off when `state` is absent.
     if _listener is None or not _listener_started:
         logger.info("set_listening received before listener started; ignoring")
         return
-    enabled = bool((message.get("args") or {}).get("enabled", True))
+    args = message.get("args") or {}
+    state = args.get("state")
+    if state is None:
+        state = "listening" if bool(args.get("enabled", True)) else "off"
+    if state not in ("listening", "deafened", "off"):
+        logger.warning("set_listening with unknown state %r; ignoring", state)
+        return
     try:
-        if enabled:
-            _listener.resume()
-        else:
-            _listener.pause()
+        _listener.set_state(state)
     except Exception:
-        logger.exception("Failed to apply set_listening (enabled=%s)", enabled)
+        logger.exception("Failed to apply set_listening (state=%s)", state)
     reply_ack(message.get("id"))
 
 

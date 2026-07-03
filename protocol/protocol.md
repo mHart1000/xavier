@@ -26,7 +26,7 @@ All messages share this structure:
 
 ```json
 {
-  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening" | "exit_input_mode" | "input_mode",
+  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening" | "exit_input_mode" | "input_mode" | "listening_state",
   "id": "string",
   "name": "command_name",
   "args": { },
@@ -154,17 +154,17 @@ page. Additive to v1.0: a daemon that predates a control message ignores it.
 
 | `type`          | fields                       | Effect                                                                                                  |
 |-----------------|------------------------------|---------------------------------------------------------------------------------------------------------|
-| `set_listening` | `args: { "enabled": bool }`  | Resume (`true`) or pause (`false`) the speech pipeline. Pausing **releases the microphone**; STT/VAD models stay loaded so resuming is fast. |
+| `set_listening` | `args: { "state": "listening" \| "deafened" \| "off", "enabled": bool }` | Set the speech pipeline state. `off` pauses it and **releases the microphone** (STT/VAD models stay loaded so resuming is fast). `deafened` keeps the mic open but ignores every utterance except the wake-back phrase (`"{wake_phrase} listen"`). `state` is optional; when absent, legacy `enabled` maps `true` → `listening`, `false` → `off`. |
 | `exit_input_mode` | none                       | Leave dictation (input) mode now, e.g. from the Numpad "+" hotkey. Idempotent — a no-op if not in input mode. The daemon replies `ack` and emits an `input_mode` `end` status. |
 
 The daemon replies with `ack` carrying the same `id`. Toggling is idempotent —
-resuming while already listening (or pausing while already paused) is a no-op.
+setting the state it is already in is a no-op.
 
 ```json
 {
   "type": "set_listening",
   "id": "1718712000000",
-  "args": { "enabled": false }
+  "args": { "state": "deafened", "enabled": true }
 }
 ```
 
@@ -178,12 +178,21 @@ its UI. Additive to v1.0: an extension that predates one ignores it. No `ack` is
 | `type`       | fields                      | Effect                                                                                                                                  |
 |--------------|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | `input_mode` | `state: "start" \| "end"`   | The daemon entered (`start`) or left (`end`) dictation mode. The extension shows/hides its input-mode indicator. Fires on entry, on "end input", and on the silence timeout. |
+| `listening_state` | `state: "listening" \| "deafened" \| "off"` | The pipeline state changed — by voice (`"{wake_phrase} deafen"` / `"{wake_phrase} listen"`) or by a `set_listening` request. Also sent once when the listener starts. The extension updates its stored state and UI. |
 
 ```json
 {
   "type": "input_mode",
   "id": "1718712000000",
   "state": "start"
+}
+```
+
+```json
+{
+  "type": "listening_state",
+  "id": "1718712000001",
+  "state": "deafened"
 }
 ```
 
