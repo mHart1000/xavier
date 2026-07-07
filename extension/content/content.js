@@ -18,6 +18,9 @@ if (window.__xavierContentLoaded) {
 } else {
   window.__xavierContentLoaded = true
 
+  // Gates per-command logging; errors always log.
+  const DEBUG = false
+
   const XAVIER_HINT_CONTAINER_ID = "xavier-hint-overlay"
   const XAVIER_HINT_CLASS = "xavier-hint"
   const XAVIER_HIGHLIGHT_CONTAINER_ID = "xavier-highlight-overlay"
@@ -66,7 +69,7 @@ if (window.__xavierContentLoaded) {
    * Listen for commands from background script
    */
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log("[Xavier Content] Received command:", message)
+    if (DEBUG) console.log("[Xavier Content] Received command:", message)
 
     const { command, args } = message
 

@@ -12,6 +12,16 @@ const NATIVE_HOST_NAME = "com.xavier.voice_browser"
 
 let nativePort = null
 
+// Gates per-message logging; errors and warnings always log.
+const DEBUG = false
+
+// Reconnect backoff: doubles while the daemon is unreachable (capped), resets
+// once a message arrives; the popup can force an instant retry.
+const RECONNECT_BASE_MS = 3000
+const RECONNECT_MAX_MS = 60000
+let reconnectDelay = RECONNECT_BASE_MS
+let reconnectTimer = null
+
 // Desired daemon state: "listening" | "deafened" | "off". In-memory for the
 // session; the open native port keeps this background script alive, and we
 // re-assert it on every (re)connect so a deafen/off choice survives a daemon
@@ -37,8 +47,11 @@ function connectNativeHost() {
       console.error("[Xavier] Native host disconnected:", browser.runtime.lastError)
       nativePort = null
 
-      // Attempt reconnection after delay
-      setTimeout(connectNativeHost, 3000)
+      // Let an open popup show "Daemon not connected".
+      browser.runtime.sendMessage({ type: "listening_state_changed", state: listeningState() })
+        .catch(() => {})  // no popup open
+
+      scheduleReconnect()
     })
 
     console.log("[Xavier] Connected to native host")
@@ -47,14 +60,32 @@ function connectNativeHost() {
     pushListeningState()
   } catch (error) {
     console.error("[Xavier] Failed to connect to native host:", error)
+    scheduleReconnect()
   }
+}
+
+function scheduleReconnect() {
+  reconnectTimer = setTimeout(connectNativeHost, reconnectDelay)
+  reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
+}
+
+/**
+ * Popup interaction while disconnected: skip the pending backoff and retry now.
+ */
+function retryConnectNow() {
+  if (nativePort !== null) return
+  clearTimeout(reconnectTimer)
+  reconnectTimer = null
+  reconnectDelay = RECONNECT_BASE_MS
+  connectNativeHost()
 }
 
 /**
  * Handle incoming messages from native host
  */
 function handleNativeMessage(message) {
-  console.log("[Xavier] Received message:", message)
+  reconnectDelay = RECONNECT_BASE_MS  // daemon proven alive
+  if (DEBUG) console.log("[Xavier] Received message:", message)
   
   if (!message || !message.type) {
     console.error("[Xavier] Invalid message format:", message)
@@ -213,7 +244,7 @@ async function showConfirmPrompt(active, command) {
 async function handleCommand(message) {
   const { id, name, args } = message
   
-  console.log(`[Xavier] Executing command: ${name}`, args)
+  if (DEBUG) console.log(`[Xavier] Executing command: ${name}`, args)
   
   try {
     switch (name) {
@@ -498,10 +529,12 @@ browser.runtime.onMessage.addListener((message, sender) => {
   }
 
   if (message.type === "get_listening_state") {
+    retryConnectNow()
     return Promise.resolve(listeningState())
   }
 
   if (message.type === "set_listening") {
+    retryConnectNow()
     if (LISTEN_STATES.includes(message.state)) {
       listenState = message.state
       renderBadge()
