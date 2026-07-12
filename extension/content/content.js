@@ -454,6 +454,7 @@ if (window.__xavierContentLoaded) {
       hintElements.push(badge)
     }
 
+    avoidOverlaps(hintElements)
     console.log(`[Xavier Content] Showing ${hintElements.length} name labels`)
   }
 
@@ -480,6 +481,7 @@ if (window.__xavierContentLoaded) {
       hintElements.push(badge)
     }
 
+    avoidOverlaps(hintElements)
     console.log(`[Xavier Content] Showing ${linkTargets.length} link labels`)
   }
 
@@ -522,6 +524,34 @@ if (window.__xavierContentLoaded) {
       z-index: 2147483647;
       box-shadow: 0 1px 3px rgba(0,0,0,0.4);
     `
+  }
+
+  /**
+   * Nudge overlapping badges downward so densely-packed labels stay readable.
+   * Badges are position:absolute, so moving one doesn't reflow the rest.
+   */
+  function avoidOverlaps(badges) {
+    const GAP = 1
+    const placed = []
+    for (const badge of badges) {
+      const rect = badge.getBoundingClientRect()
+      const left = rect.left
+      const right = rect.left + rect.width
+      let top = rect.top
+      // Drop below any placed badge this one still overlaps.
+      let moved = true
+      while (moved) {
+        moved = false
+        for (const p of placed) {
+          if (left < p.right && right > p.left && top < p.bottom && top + rect.height > p.top) {
+            top = p.bottom + GAP
+            moved = true
+          }
+        }
+      }
+      badge.style.top = `${top}px`
+      placed.push({ left, right, top, bottom: top + rect.height })
+    }
   }
 
   function hideHints() {
