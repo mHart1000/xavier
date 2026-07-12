@@ -542,7 +542,7 @@ if (window.__xavierContentLoaded) {
     const candidates = []
     for (const el of document.body.querySelectorAll('*')) {
       if (!isRendered(el) || !isInViewport(el)) continue
-      if (isClickable(el) || window.getComputedStyle(el).cursor === "pointer") {
+      if (isClickable(el) || originatesPointer(el)) {
         candidates.push(el)
       }
     }
@@ -553,6 +553,13 @@ if (window.__xavierContentLoaded) {
 
   function isClickable(el) {
     return el.matches(CLICKABLE_SELECTOR)
+  }
+
+  // Checks if pointer style originates on self or parent when determining link status.
+  function originatesPointer(el) {
+    if (window.getComputedStyle(el).cursor !== "pointer") return false
+    const parent = el.parentElement
+    return !parent || window.getComputedStyle(parent).cursor !== "pointer"
   }
 
   /**
