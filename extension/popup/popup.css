@@ -48,6 +48,46 @@ body {
   outline-offset: 2px;
 }
 
+.deafen {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 1px solid #8a8a8a;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.deafen svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Active = deafened; gray to read as "muted", matching the toolbar badge. */
+.deafen.active {
+  background: #6b6b6b;
+  border-color: #6b6b6b;
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(107, 107, 107, 0.25);
+}
+
+.deafen:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.deafen:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
 .status {
   font-size: 13px;
   font-weight: 600;

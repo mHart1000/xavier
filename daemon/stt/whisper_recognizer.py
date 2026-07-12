@@ -36,7 +36,8 @@ class WhisperRecognizer(SpeechRecognizer):
         )
         logger.info("faster-whisper model loaded")
 
-    def transcribe(self, pcm16, accurate=False):
+    def transcribe(self, pcm16, accurate=False, wake_only=False):
+        # No wake-only grammar; `wake_only` is ignored.
         if self.model is None:
             return Transcript(text="", confidence=0.0)
 

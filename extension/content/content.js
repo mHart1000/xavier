@@ -18,6 +18,9 @@ if (window.__xavierContentLoaded) {
 } else {
   window.__xavierContentLoaded = true
 
+  // Gates per-command logging; errors always log.
+  const DEBUG = false
+
   const XAVIER_HINT_CONTAINER_ID = "xavier-hint-overlay"
   const XAVIER_HINT_CLASS = "xavier-hint"
   const XAVIER_HIGHLIGHT_CONTAINER_ID = "xavier-highlight-overlay"
@@ -66,7 +69,7 @@ if (window.__xavierContentLoaded) {
    * Listen for commands from background script
    */
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log("[Xavier Content] Received command:", message)
+    if (DEBUG) console.log("[Xavier Content] Received command:", message)
 
     const { command, args } = message
 
@@ -168,6 +171,10 @@ if (window.__xavierContentLoaded) {
 
         case "confirm_prompt_off":
           hideConfirmPrompt()
+          break
+
+        case "listening_state_flash":
+          flashListeningState(args)
           break
 
         default:
@@ -375,6 +382,41 @@ if (window.__xavierContentLoaded) {
     if (banner) {
       banner.remove()
     }
+  }
+
+  const XAVIER_STATE_FLASH_ID = "xavier-state-flash"
+
+  function flashListeningState(args) {
+    const existing = document.getElementById(XAVIER_STATE_FLASH_ID)
+    if (existing) {
+      clearTimeout(existing._flashTimer)
+      existing.remove()
+    }
+
+    const label = args && args.state === "deafened" ? "Deafening" : "Listening"
+
+    const banner = document.createElement("div")
+    banner.id = XAVIER_STATE_FLASH_ID
+    banner.style.cssText = `
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #015c4d;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      font-weight: bold;
+      pointer-events: none;
+      z-index: 2147483647;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.35);
+    `
+    banner.textContent = label
+    document.body.appendChild(banner)
+
+    banner._flashTimer = setTimeout(() => banner.remove(), 1500)
   }
 
   /**

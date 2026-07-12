@@ -1,6 +1,6 @@
 """Parser: open_url spoken-URL parsing, command grammar, and triggers."""
 
-from core.parser import command_grammar, command_triggers, input_command, parse_command
+from core.parser import command_grammar, command_triggers, input_command, parse_command, wake_grammar
 
 
 def test_open_url_dot():
@@ -43,6 +43,20 @@ def test_command_grammar_contains_expected_tokens():
 def test_command_grammar_includes_wake_word():
     assert "browser" in command_grammar(wake_phrase="browser")
     assert "browser" not in command_grammar()
+
+
+def test_command_grammar_includes_deafen_words_with_wake():
+    grammar = command_grammar(wake_phrase="browser")
+    assert "deafen" in grammar
+    assert "listen" in grammar
+    assert "deafen" not in command_grammar()  # only meaningful with a wake phrase
+
+
+def test_wake_grammar_is_minimal():
+    grammar = wake_grammar("browser")
+    assert grammar == ["browser", "listen", "[unk]"]
+    assert "deafen" not in grammar
+    assert "scroll" not in grammar
 
 
 def test_command_triggers():

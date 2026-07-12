@@ -12,7 +12,13 @@ Whisper never runs on random speech.
 
 import logging
 
-from core.parser import INPUT_TRIGGER, command_grammar, command_triggers, normalize_transcript
+from core.parser import (
+    INPUT_TRIGGER,
+    command_grammar,
+    command_triggers,
+    normalize_transcript,
+    wake_grammar,
+)
 from stt.base import SpeechRecognizer, Transcript
 from stt.vosk_recognizer import VoskRecognizer
 from stt.whisper_recognizer import WhisperRecognizer
@@ -27,7 +33,9 @@ class HybridRecognizer(SpeechRecognizer):
         self.wake = normalize_transcript(wake_phrase) if wake_phrase else None
         self.triggers = command_triggers()
         self.vosk = VoskRecognizer(
-            stt_config.get("vosk", {}), sample_rate, grammar=command_grammar(wake_phrase)
+            stt_config.get("vosk", {}), sample_rate,
+            grammar=command_grammar(wake_phrase),
+            wake_grammar=wake_grammar(wake_phrase) if wake_phrase else None,
         )
         self.whisper = WhisperRecognizer(stt_config.get("whisper", {}), sample_rate)
         self._whisper_ok = False
@@ -40,7 +48,14 @@ class HybridRecognizer(SpeechRecognizer):
         except Exception as e:
             logger.warning("Whisper accuracy path disabled (%s); fixed commands still work", e)
 
-    def transcribe(self, pcm16, accurate=False):
+    def transcribe(self, pcm16, accurate=False, wake_only=False):
+        # Deafened: Vosk-only, wake grammar; [unk] noise is stripped so the exact phrase still matches.
+        if wake_only:
+            vt = self.vosk.transcribe(pcm16, wake_only=True)
+            text = " ".join(t for t in vt.text.split() if t != "[unk]")
+            logger.info("hybrid: route=vosk-wake (%r)", vt.text)
+            return Transcript(text=text, confidence=vt.confidence if text else 0.0)
+
         # Input mode forces the accuracy path: skip Vosk's grammar gate and trigger
         # routing and transcribe the whole utterance with Whisper. Silero VAD has
         # already gated to real speech upstream, so the reject step isn't needed.

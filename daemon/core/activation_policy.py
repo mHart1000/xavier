@@ -20,8 +20,10 @@ import time
 from core.parser import (
     CANCEL_WORDS,
     CONFIRM_WORDS,
+    DEAFEN_WORD,
     INPUT_EXIT_PHRASES,
     INPUT_TRIGGER,
+    LISTEN_WORD,
     input_command,
     normalize_transcript,
     parse_command,
@@ -84,7 +86,7 @@ class ActivationPolicy:
         if self.mode not in IMPLEMENTED_MODES:
             raise ValueError(f"Unknown listener mode: {self.mode}")
 
-        self.wake_phrase = normalize_transcript(listener_config.get("wake_phrase", "browser"))
+        self.wake_phrase = normalize_transcript(listener_config.get("wake_phrase", "arianna"))
         self.session_timeout = listener_config.get("session_timeout_seconds", 300)
         self.confirm_high = safety_config.get("confirm_high_risk_commands", True)
         self.allow_continuous = safety_config.get("allow_continuous_commands_without_wake", True)
@@ -92,6 +94,11 @@ class ActivationPolicy:
         self.session_active_until = 0.0
         self.pending_command = None
         self.pending_until = 0.0
+
+        # Voice toggling requires a wake phrase; set_deafened() works regardless.
+        self.deafened = False
+        self.deafen_phrase = f"{self.wake_phrase} {DEAFEN_WORD}" if self.wake_phrase else None
+        self.listen_phrase = f"{self.wake_phrase} {LISTEN_WORD}" if self.wake_phrase else None
 
         # Input (dictation) mode. Driven here plus the listener's silence timer.
         self.input_silence_timeout = listener_config.get("input_silence_timeout_seconds", 5)
@@ -135,11 +142,36 @@ class ActivationPolicy:
         self.pending_command = None
         return was_pending
 
+    def set_deafened(self, deafened):
+        """Enter/leave the deafened state (voice or extension initiated). Entering
+        also ends dictation and drops a pending confirm, mirroring a mic release.
+        Returns True if the state changed."""
+        deafened = bool(deafened)
+        if deafened == self.deafened:
+            return False
+        self.deafened = deafened
+        if deafened:
+            self.exit_input_mode()
+            self.clear_pending_confirm()
+        return True
+
     def evaluate(self, transcript, confidence=1.0, now=None):
         now = time.monotonic() if now is None else now
         text = normalize_transcript(transcript)
         if not text:
             return None, "empty"
+
+        # Checked before input mode so the wake phrase works mid-dictation (tradeoff: these phrases can't be dictated).
+        if self.deafen_phrase and text == self.deafen_phrase:
+            self.set_deafened(True)
+            return None, "deafen"
+        if self.listen_phrase and text == self.listen_phrase:
+            self._touch_session(now)
+            if self.set_deafened(False):
+                return None, "undeafen"
+            return None, "already_listening"
+        if self.deafened:
+            return None, "deafened"
 
         # Expire a stale pending confirmation.
         if self.pending_command is not None and now >= self.pending_until:

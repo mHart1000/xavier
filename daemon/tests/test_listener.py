@@ -152,3 +152,67 @@ def test_exit_input_mode_delegates_to_policy():
     lis.policy = MagicMock()
     lis.exit_input_mode()
     lis.policy.exit_input_mode.assert_called_once()
+
+
+def test_state_property():
+    lis = Listener(make_config(), emit_command=lambda c: None)
+    assert lis.state == "off"                 # no mic yet
+    lis.policy = SimpleNamespace(deafened=False)
+    lis.audio = object()
+    assert lis.state == "listening"
+    lis.policy.deafened = True
+    assert lis.state == "deafened"
+
+
+def test_set_state_off_pauses(listener):
+    listener.start()
+    listener.set_state("off")
+    assert listener.audio is None
+
+
+def test_set_state_deafened_sets_policy_and_resumes(listener):
+    listener.start()
+    listener.set_state("off")
+    listener.set_state("deafened")
+    listener.policy.set_deafened.assert_called_with(True)
+    assert listener.audio is not None
+
+
+def test_set_state_listening_clears_deafened(listener):
+    listener.start()
+    listener.set_state("listening")
+    listener.policy.set_deafened.assert_called_with(False)
+    assert listener.audio is not None
+
+
+def test_pause_emits_listening_state_off_once(listener):
+    events = []
+    listener.emit_event = events.append
+    listener.start()
+
+    listener.pause()
+    offs = [e for e in events if e["type"] == "listening_state" and e["state"] == "off"]
+    assert len(offs) == 1
+
+    listener.pause()                          # already paused: no re-emit
+    offs = [e for e in events if e["type"] == "listening_state" and e["state"] == "off"]
+    assert len(offs) == 1
+
+
+def test_listening_state_indicator_emits_on_transition():
+    events = []
+    lis = Listener(make_config(), emit_command=lambda c: None, emit_event=events.append)
+    lis.policy = SimpleNamespace(deafened=False)
+    lis.audio = object()                      # mic "open" so state derives from the flag
+
+    lis._sync_listening_state_indicator()
+    assert events == []                       # no change → no event
+
+    lis.policy.deafened = True
+    lis._sync_listening_state_indicator()
+    lis._sync_listening_state_indicator()     # idempotent while deafened
+    assert events == [{"type": "listening_state", "state": "deafened"}]
+
+    lis.policy.deafened = False
+    lis._sync_listening_state_indicator()
+    assert events[-1] == {"type": "listening_state", "state": "listening"}

@@ -83,6 +83,10 @@ CANCEL_WORDS = ("cancel",)
 INPUT_TRIGGER = "input"
 INPUT_EXIT_PHRASES = ("end input",)
 
+# "<wake> deafen" / "<wake> listen" are consumed by the activation policy, not parse_command.
+DEAFEN_WORD = "deafen"
+LISTEN_WORD = "listen"
+
 # Leading position words: "highlight <ordinal> <target>" (1-based).
 ORDINAL_WORDS = {
     "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
@@ -113,6 +117,7 @@ NUMBER_CONNECTORS = {"and"}
 def command_hotwords():
     """Distinct words across the command vocabulary, for biasing the recognizer."""
     words = {"highlight", "input", "end", "link"}  # trigger-routed words, not PHRASE_COMMANDS entries
+    words.update((DEAFEN_WORD, LISTEN_WORD))  # deafen-state toggles
     words.update(ORDINAL_WORDS)   # bias "highlight <ordinal> <target>"
     words.update(SMALL_NUMBERS)   # bias trailing number words
     words.update(TENS_NUMBERS)
@@ -137,6 +142,18 @@ def command_grammar(wake_phrase=None):
         words.update(phrase.split())
     if wake_phrase:
         words.update(normalize_transcript(wake_phrase).split())
+        words.update((DEAFEN_WORD, LISTEN_WORD))  # "<wake> deafen" / "<wake> listen"
+    return sorted(words) + ["[unk]"]
+
+
+def wake_grammar(wake_phrase):
+    """
+    Minimal Vosk grammar for the deafened state: just the wake phrase plus
+    "listen", so only "<wake> listen" can be recognized and everything else
+    maps to "[unk]".
+    """
+    words = set(normalize_transcript(wake_phrase).split())
+    words.add(LISTEN_WORD)
     return sorted(words) + ["[unk]"]
 
 
