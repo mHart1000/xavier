@@ -454,6 +454,7 @@ if (window.__xavierContentLoaded) {
       hintElements.push(badge)
     }
 
+    avoidOverlaps(hintElements)
     console.log(`[Xavier Content] Showing ${hintElements.length} name labels`)
   }
 
@@ -480,6 +481,7 @@ if (window.__xavierContentLoaded) {
       hintElements.push(badge)
     }
 
+    avoidOverlaps(hintElements)
     console.log(`[Xavier Content] Showing ${linkTargets.length} link labels`)
   }
 
@@ -524,6 +526,34 @@ if (window.__xavierContentLoaded) {
     `
   }
 
+  /**
+   * Nudge overlapping badges downward so densely-packed labels stay readable.
+   * Badges are position:absolute, so moving one doesn't reflow the rest.
+   */
+  function avoidOverlaps(badges) {
+    const GAP = 1
+    const placed = []
+    for (const badge of badges) {
+      const rect = badge.getBoundingClientRect()
+      const left = rect.left
+      const right = rect.left + rect.width
+      let top = rect.top
+      // Drop below any placed badge this one still overlaps.
+      let moved = true
+      while (moved) {
+        moved = false
+        for (const p of placed) {
+          if (left < p.right && right > p.left && top < p.bottom && top + rect.height > p.top) {
+            top = p.bottom + GAP
+            moved = true
+          }
+        }
+      }
+      badge.style.top = `${top}px`
+      placed.push({ left, right, top, bottom: top + rect.height })
+    }
+  }
+
   function hideHints() {
     const container = document.getElementById(XAVIER_HINT_CONTAINER_ID)
     if (container) {
@@ -542,7 +572,7 @@ if (window.__xavierContentLoaded) {
     const candidates = []
     for (const el of document.body.querySelectorAll('*')) {
       if (!isRendered(el) || !isInViewport(el)) continue
-      if (isClickable(el) || window.getComputedStyle(el).cursor === "pointer") {
+      if (isClickable(el) || originatesPointer(el)) {
         candidates.push(el)
       }
     }
@@ -553,6 +583,13 @@ if (window.__xavierContentLoaded) {
 
   function isClickable(el) {
     return el.matches(CLICKABLE_SELECTOR)
+  }
+
+  // Checks if pointer style originates on self or parent when determining link status.
+  function originatesPointer(el) {
+    if (window.getComputedStyle(el).cursor !== "pointer") return false
+    const parent = el.parentElement
+    return !parent || window.getComputedStyle(parent).cursor !== "pointer"
   }
 
   /**
