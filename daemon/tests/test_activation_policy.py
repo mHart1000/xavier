@@ -5,13 +5,17 @@ import pytest
 from core.activation_policy import ActivationPolicy, risk_tier
 
 
-def make_policy(mode="vad_continuous", allow_continuous=True, confirm_high=True):
+def make_policy(mode="vad_continuous", allow_continuous=True, confirm_high=True,
+                voice_chat=None):
     listener = {"mode": mode, "wake_phrase": "browser", "session_timeout_seconds": 300,
                 "pre_roll_ms": 500, "min_speech_ms": 300, "end_silence_ms": 700,
                 "max_segment_seconds": 8}
     safety = {"confirm_high_risk_commands": confirm_high,
               "allow_continuous_commands_without_wake": allow_continuous}
-    return ActivationPolicy(listener, safety)
+    return ActivationPolicy(listener, safety, voice_chat)
+
+
+CHAT_CFG = {"enabled": True, "wake_aliases": ["bowser"]}
 
 
 def test_low_command_passes():
@@ -299,3 +303,76 @@ def test_input_silence_timeout_and_refresh():
     assert policy.exit_input_mode() is True
     assert policy.in_input_mode is False
     assert policy.input_expired(20) is False    # no longer in mode
+
+
+def test_wake_freeform_routes_to_chat():
+    cmd, reason = make_policy(voice_chat=CHAT_CFG).evaluate(
+        "Browser, what's the weather on Mars?", now=0)
+    assert reason == "chat"
+    assert cmd["name"] == "voice_chat"
+    assert cmd["args"]["text"] == "what's the weather on Mars?"  # raw casing kept
+    assert cmd["meta"]["wake_heard"] is False
+
+
+def test_alias_spelling_routes_to_chat():
+    cmd, reason = make_policy(voice_chat=CHAT_CFG).evaluate(
+        "Bowser, what's up?", now=0, wake_heard=True)
+    assert reason == "chat"
+    assert cmd["args"]["text"] == "what's up?"
+
+
+def test_unrecognizable_wake_spelling_keeps_full_payload():
+    # Whisper mangled the wake word; wake_heard vouches for it, nothing is stripped.
+    cmd, reason = make_policy(voice_chat=CHAT_CFG).evaluate(
+        "Brawler, tell me a joke.", now=0, wake_heard=True)
+    assert reason == "chat"
+    assert cmd["args"]["text"] == "Brawler, tell me a joke."
+    assert cmd["meta"]["wake_heard"] is True
+
+
+def test_alias_spelling_recovers_commands():
+    cmd, reason = make_policy(voice_chat=CHAT_CFG).evaluate(
+        "Bowser, scroll down.", now=0, wake_heard=True)
+    assert reason == "ok"
+    assert cmd["name"] == "scroll_down"
+
+
+def test_freeform_without_wake_is_no_match():
+    cmd, reason = make_policy(voice_chat=CHAT_CFG).evaluate("what's the weather", now=0)
+    assert cmd is None
+    assert reason == "no_match"
+
+
+def test_chat_disabled_wake_freeform_is_no_match():
+    cmd, reason = make_policy().evaluate("browser what's the weather", now=0)
+    assert cmd is None
+    assert reason == "no_match"
+
+
+def test_wake_heard_bypasses_no_session_and_touches_session():
+    policy = make_policy(allow_continuous=False, voice_chat=CHAT_CFG)
+    cmd, reason = policy.evaluate("Brawler, hello there.", now=0, wake_heard=True)
+    assert reason == "chat"
+    cmd, reason = policy.evaluate("scroll down", now=1)  # session opened above
+    assert reason == "ok"
+
+
+def test_bare_alias_is_wake_only():
+    cmd, reason = make_policy(voice_chat=CHAT_CFG).evaluate("Bowser.", now=0,
+                                                            wake_heard=True)
+    assert cmd is None
+    assert reason == "wake_only"
+
+
+def test_unk_residue_is_not_chat():
+    # Whisper-disabled degraded path: Vosk garbage must not reach the LLM.
+    cmd, reason = make_policy(voice_chat=CHAT_CFG).evaluate("browser [unk] [unk]", now=0)
+    assert cmd is None
+    assert reason == "no_match"
+
+
+def test_input_trigger_wins_over_chat():
+    policy = make_policy(voice_chat=CHAT_CFG)
+    cmd, reason = policy.evaluate("browser input hello there", now=0)
+    assert reason == "input_start"
+    assert policy.in_input_mode is True

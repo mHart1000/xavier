@@ -13,10 +13,14 @@ Whisper never runs on random speech.
 import logging
 
 from core.parser import (
+    CONFIRM_WORDS,
+    DEAFEN_WORD,
     INPUT_TRIGGER,
+    LISTEN_WORD,
     command_grammar,
     command_triggers,
     normalize_transcript,
+    parse_command,
     wake_grammar,
 )
 from stt.base import SpeechRecognizer, Transcript
@@ -32,6 +36,8 @@ class HybridRecognizer(SpeechRecognizer):
         super().__init__(stt_config, sample_rate)
         self.wake = normalize_transcript(wake_phrase) if wake_phrase else None
         self.triggers = command_triggers()
+        # Consumed by the activation policy, not parse_command; must not reroute.
+        self._policy_words = frozenset(CONFIRM_WORDS) | {DEAFEN_WORD, LISTEN_WORD}
         self.vosk = VoskRecognizer(
             stt_config.get("vosk", {}), sample_rate,
             grammar=command_grammar(wake_phrase),
@@ -74,8 +80,10 @@ class HybridRecognizer(SpeechRecognizer):
             return Transcript(text="", confidence=0.0)
 
         probe = normalize_transcript(vt.text)
+        wake_stripped = False
         if self.wake and probe.startswith(self.wake + " "):
             probe = probe[len(self.wake) + 1:].strip()
+            wake_stripped = True
 
         if self._whisper_ok:
             matched = next(
@@ -85,6 +93,15 @@ class HybridRecognizer(SpeechRecognizer):
                 # "input" is dictation (natural casing); other triggers are commands.
                 logger.info("hybrid: route=whisper (vosk: %r)", vt.text)
                 return self.whisper.transcribe(pcm16, accurate=(matched == INPUT_TRIGGER))
+
+        # Wake + non-command remainder: Vosk confirmed the wake word, so re-transcribe
+        # the full audio for the voice-chat path. wake_heard tells downstream the wake
+        # is real even if Whisper spells it differently.
+        if wake_stripped and self._whisper_ok and probe not in self._policy_words:
+            if "[unk]" in tokens or parse_command(probe) is None:
+                logger.info("hybrid: route=whisper (wake reroute, vosk: %r)", vt.text)
+                wt = self.whisper.transcribe(pcm16, accurate=True)
+                return Transcript(text=wt.text, confidence=wt.confidence, wake_heard=True)
 
         logger.info("hybrid: route=vosk (%r)", vt.text)
         return vt

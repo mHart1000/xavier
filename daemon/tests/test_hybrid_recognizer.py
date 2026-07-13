@@ -159,3 +159,72 @@ def test_wake_only_all_unk_is_empty():
     out = h.transcribe(b"", wake_only=True)
     assert out.text == ""
     assert out.confidence == 0.0
+
+
+def test_wake_freeform_reroutes_to_whisper():
+    h = make_hybrid("browser [unk] [unk]", whisper_text="Browser, what's the weather?",
+                    wake_phrase="browser")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 1
+    assert h.whisper.last_accurate is True    # natural casing/punctuation for chat
+    assert out.wake_heard is True
+    assert out.text == "Browser, what's the weather?"
+
+
+def test_wake_unparseable_grammar_words_reroute():
+    # No [unk] tokens, but the remainder is not a parseable command.
+    h = make_hybrid("browser up down", whisper_text="Browser, up and down.",
+                    wake_phrase="browser")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 1
+    assert out.wake_heard is True
+
+
+def test_wake_known_command_stays_on_vosk():
+    h = make_hybrid("browser scroll down", wake_phrase="browser")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 0
+    assert out.text == "browser scroll down"
+    assert out.wake_heard is False
+
+
+def test_wake_trigger_path_does_not_set_wake_heard():
+    h = make_hybrid("browser open url [unk]", whisper_text="open url example dot com",
+                    wake_phrase="browser")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 1
+    assert h.whisper.last_accurate is False   # command bias kept on the trigger path
+    assert out.wake_heard is False
+
+
+def test_no_wake_unparseable_passes_through_to_vosk():
+    h = make_hybrid("up [unk]", wake_phrase="browser")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 0
+    assert out.text == "up [unk]"
+
+
+def test_wake_freeform_without_whisper_returns_vosk():
+    h = make_hybrid("browser [unk] [unk]", whisper_ok=False, wake_phrase="browser")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 0
+    assert out.text == "browser [unk] [unk]"
+    assert out.wake_heard is False
+
+
+def test_policy_words_never_reroute():
+    for text in ("browser deafen", "browser listen", "browser confirm",
+                 "browser confirmed", "browser cancel"):
+        h = make_hybrid(text, wake_phrase="browser")
+        out = h.transcribe(b"")
+        assert h.whisper.calls == 0, text
+        assert out.text == text
+        assert out.wake_heard is False
+
+
+def test_bare_wake_stays_on_vosk():
+    h = make_hybrid("browser", wake_phrase="browser")
+    out = h.transcribe(b"")
+    assert h.whisper.calls == 0
+    assert out.text == "browser"
+    assert out.wake_heard is False

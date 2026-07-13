@@ -5,6 +5,8 @@ Activation policy. Sits between the recognizer and the parser:
 - runs the deterministic parser on the cleaned transcript
 - enforces risk tiers: LOW/MEDIUM allowed in an active session, HIGH requires a
   spoken "confirm" first (when confirm_high_risk_commands is set)
+- routes wake-prefixed free-form speech to a daemon-internal voice_chat intent
+  (reason "chat") when voice chat is enabled
 
 evaluate() returns (command_or_None, reason). The listener emits the command if
 present and logs the reason either way.
@@ -76,7 +78,7 @@ def _payload_after(raw, word):
 
 class ActivationPolicy:
 
-    def __init__(self, listener_config, safety_config):
+    def __init__(self, listener_config, safety_config, voice_chat_config=None):
         self.mode = listener_config.get("mode", "vad_continuous")
         if self.mode in STUBBED_MODES:
             raise NotImplementedError(
@@ -105,11 +107,41 @@ class ActivationPolicy:
         self.in_input_mode = False
         self.input_deadline = 0.0
 
+        # Voice chat: wake-gated free-form speech (vad_continuous only). Aliases
+        # are accepted wake spellings — Whisper may not write "arianna".
+        vc = voice_chat_config or {}
+        self.chat_enabled = bool(vc.get("enabled", False))
+        aliases = tuple(a for a in (normalize_transcript(x) for x in vc.get("wake_aliases", ()))
+                        if a and a != self.wake_phrase)
+        self.wake_words = ((self.wake_phrase,) if self.wake_phrase else ()) + aliases
+
     def _touch_session(self, now):
         self.session_active_until = now + self.session_timeout
 
     def _session_active(self, now):
         return now < self.session_active_until
+
+    def _strip_wake_normalized(self, text):
+        """Remainder after a leading wake spelling in normalized text, else None."""
+        for wake in self.wake_words:
+            if text.startswith(wake + " "):
+                return text[len(wake) + 1:].strip()
+        return None
+
+    def _strip_wake_raw(self, raw):
+        """Drop a leading wake token (any spelling/casing/punctuation) from the raw
+        transcript, preserving the remainder verbatim."""
+        for wake in self.wake_words:
+            pattern = r'^\W*' + r'\W+'.join(re.escape(t) for t in wake.split()) + r'\b[\s,.!?:;-]*'
+            match = re.match(pattern, raw, flags=re.IGNORECASE)
+            if match:
+                return raw[match.end():].strip()
+        return raw.strip()
+
+    @staticmethod
+    def _has_real_words(text):
+        """False when the text is only Vosk unknown-token residue ("unk unk")."""
+        return any(t != "unk" for t in text.split())
 
     def exit_input_mode(self):
         """Leave input mode. Returns True if it was active (so the caller can log/notify)."""
@@ -155,7 +187,7 @@ class ActivationPolicy:
             self.clear_pending_confirm()
         return True
 
-    def evaluate(self, transcript, confidence=1.0, now=None):
+    def evaluate(self, transcript, confidence=1.0, now=None, wake_heard=False):
         now = time.monotonic() if now is None else now
         text = normalize_transcript(transcript)
         if not text:
@@ -201,18 +233,27 @@ class ActivationPolicy:
             self.pending_command = None  # any other utterance cancels
 
         session_ok = self._session_active(now)
+        wake_prefixed = False
 
         if self.mode == "push_to_talk":
             # Capture is gated externally; treat each utterance as in-session.
             session_ok = True
         else:  # vad_continuous
-            if self.wake_phrase and text == self.wake_phrase:
+            if text in self.wake_words:
                 self._touch_session(now)
                 return None, "wake_only"
-            if self.wake_phrase and text.startswith(self.wake_phrase + " "):
-                text = text[len(self.wake_phrase) + 1:].strip()
+            stripped = self._strip_wake_normalized(text)
+            if stripped is not None:
+                text = stripped
                 self._touch_session(now)
                 session_ok = True
+                wake_prefixed = True
+            elif wake_heard:
+                # Vosk confirmed the wake acoustically; the accurate transcript may
+                # spell it unrecognizably. Same session semantics as a textual wake.
+                self._touch_session(now)
+                session_ok = True
+                wake_prefixed = True
             elif self.allow_continuous:
                 session_ok = True
             elif not session_ok:
@@ -232,6 +273,17 @@ class ActivationPolicy:
 
         command = parse_command(text, confidence)
         if command is None:
+            # Wake-gated chat: the payload comes from the raw transcript so the LLM
+            # sees Whisper's casing/punctuation, not the parser normalization.
+            if self.chat_enabled and wake_prefixed and self._has_real_words(text):
+                payload = self._strip_wake_raw(transcript)
+                return ({
+                    "type": "command",
+                    "name": "voice_chat",
+                    "args": {"text": payload},
+                    "meta": {"confidence": confidence, "raw": transcript,
+                             "wake_heard": wake_heard},
+                }, "chat")
             return None, "no_match"
 
         tier = risk_tier(command["name"])
