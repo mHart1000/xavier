@@ -26,7 +26,7 @@ All messages share this structure:
 
 ```json
 {
-  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening" | "exit_input_mode" | "input_mode" | "listening_state",
+  "type": "command" | "ready" | "ack" | "error" | "ping" | "set_listening" | "exit_input_mode" | "input_mode" | "listening_state" | "confirm" | "voice_chat",
   "id": "string",
   "name": "command_name",
   "args": { },
@@ -179,6 +179,8 @@ its UI. Additive to v1.0: an extension that predates one ignores it. No `ack` is
 |--------------|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
 | `input_mode` | `state: "start" \| "end"`   | The daemon entered (`start`) or left (`end`) dictation mode. The extension shows/hides its input-mode indicator. Fires on entry, on "end input", and on the silence timeout. |
 | `listening_state` | `state: "listening" \| "deafened" \| "off"` | The pipeline state changed — by voice (`"{wake_phrase} deafen"` / `"{wake_phrase} listen"`) or by a `set_listening` request. Also sent once when the listener starts. The extension updates its stored state and UI. |
+| `confirm` | `state: "start" \| "end"`, `command` (on `start`) | A high-risk command started awaiting the spoken "confirm" (`start`, with `command: <name>`) or stopped awaiting it (`end`: confirmed, cancelled, or timed out). The extension shows/hides its confirm prompt. |
+| `voice_chat` | `state: "start" \| "end" \| "error"`, `error` (on `error`) | A voice-chat reply is being fetched/played; the mic is paused for the duration. `error` carries a message. Badge feedback only — no extension action required. |
 
 ```json
 {
@@ -193,6 +195,15 @@ its UI. Additive to v1.0: an extension that predates one ignores it. No `ack` is
   "type": "listening_state",
   "id": "1718712000001",
   "state": "deafened"
+}
+```
+
+```json
+{
+  "type": "voice_chat",
+  "id": "1718712000002",
+  "state": "error",
+  "error": "AIUI request failed (POST /api/voice_chat): [Errno 111] Connection refused"
 }
 ```
 

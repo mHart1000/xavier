@@ -6,6 +6,7 @@ works regardless of the launcher's working directory.
 
 import json
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,30 @@ DEFAULTS = {
         "min_speech_ms": 300,
         "end_silence_ms": 400,
         "max_segment_seconds": 8,
+        "input_silence_timeout_seconds": 5,
     },
     "safety": {
         "confirm_high_risk_commands": True,
         "allow_submit_actions": False,
         "allow_destructive_actions": False,
         "allow_continuous_commands_without_wake": True,
+    },
+    "voice_chat": {
+        "enabled": False,
+        "base_url": "http://localhost:3100",
+        # Credentials come from XAVIER_AIUI_EMAIL / XAVIER_AIUI_PASSWORD (see
+        # _apply_env_overrides); config.json is tracked in plaintext.
+        "email": None,
+        "password": None,
+        "voice": None,
+        "speed": 1.0,
+        "model_code": None,
+        "wake_aliases": ["ariana", "arianne", "aria"],
+        "connect_timeout_seconds": 5,
+        # Per-read stall guard: local LLMs can pause well over 30s mid-reply.
+        "read_timeout_seconds": 120,
+        "max_response_seconds": 120,
+        "playback_command": None,
     },
     "protocol": {"native_messaging_host": "com.xavier.voice_browser"},
     "logging": {"level": "INFO", "file": "logs/xavier.log"},
@@ -81,6 +100,19 @@ def _resolve_paths(config):
     return config
 
 
+def _apply_env_overrides(config):
+    """Overlay AIUI credentials from the environment; empty values don't override.
+    Replaces the voice_chat dict rather than mutating it (it may be DEFAULTS')."""
+    overrides = {}
+    for env, key in (("XAVIER_AIUI_EMAIL", "email"), ("XAVIER_AIUI_PASSWORD", "password")):
+        value = os.environ.get(env)
+        if value:
+            overrides[key] = value
+    if overrides:
+        config["voice_chat"] = {**config["voice_chat"], **overrides}
+    return config
+
+
 def load_config(path=None):
     """Load config.json merged over DEFAULTS. Missing file falls back to defaults."""
     config_path = Path(path) if path else DAEMON_DIR / "config.json"
@@ -95,4 +127,4 @@ def load_config(path=None):
         logger.error("Invalid config.json (%s); using defaults", e)
         config = _deep_merge(DEFAULTS, {})
 
-    return _resolve_paths(config)
+    return _resolve_paths(_apply_env_overrides(config))

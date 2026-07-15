@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from core.config import load_config
 from core.listener import Listener
 from native_messaging.framing import read_message, send_message
+from voice_chat.session import VoiceChatSession
 
 # stdout is shared by the main loop (ping replies) and the listener thread.
 _send_lock = threading.Lock()
@@ -153,6 +154,8 @@ def main():
     logger.info("Xavier daemon started; waiting for extension messages on stdin")
 
     _listener = Listener(config, emit_command, emit_event)
+    _session = VoiceChatSession(config, _listener, emit_event)
+    _listener.on_voice_chat = _session.handle
 
     try:
         while True:
@@ -191,6 +194,8 @@ def run_mic_test():
         return True
 
     listener = Listener(config, emit_stderr, emit_stderr)
+    session = VoiceChatSession(config, listener, emit_stderr)
+    listener.on_voice_chat = session.handle
     listener.start()
     try:
         while True:

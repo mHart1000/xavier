@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 class Transcript:
     text: str
     confidence: float
+    # Wake word confirmed acoustically (Vosk grammar) even if text spells it differently.
+    wake_heard: bool = False
 
 
 class SpeechRecognizer:
