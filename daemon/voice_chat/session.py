@@ -13,7 +13,7 @@ import threading
 import time
 
 from audio.output import AudioOutput
-from voice_chat.client import VoiceChatClient, VoiceChatError
+from voice_chat.client import VoiceChatClient, VoiceChatError, read_chunk
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class VoiceChatSession:
                     logger.warning("voice chat reply hit max_response_seconds; "
                                    "aborting playback")
                     break
-                chunk = resp.read(4096)
+                chunk = read_chunk(resp, 4096)
                 if not chunk:
                     break
                 output.write(chunk)

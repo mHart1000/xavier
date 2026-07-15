@@ -42,6 +42,15 @@ def _read_exact(resp, n):
     return data
 
 
+def read_chunk(resp, n):
+    """One streaming body read with transport errors wrapped (a stalled socket
+    raises TimeoutError after read_timeout_seconds)."""
+    try:
+        return resp.read(n)
+    except (HTTPException, OSError) as e:
+        raise VoiceChatError(f"reply stream interrupted: {e}") from e
+
+
 def _parse_wav_header(header):
     """(sample_rate, channels) from a 44-byte WAV header."""
     channels = struct.unpack_from("<H", header, 22)[0]
@@ -55,7 +64,7 @@ def _parse_wav_header(header):
 class VoiceChatClient:
 
     def __init__(self, vc_config):
-        split = urlsplit(vc_config.get("base_url") or "http://localhost:3000")
+        split = urlsplit(vc_config.get("base_url") or "http://localhost:3100")
         if split.scheme != "http":
             raise VoiceChatError(
                 f"voice_chat.base_url must be http:// (got {split.scheme!r})")

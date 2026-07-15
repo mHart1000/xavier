@@ -44,7 +44,7 @@ DEFAULTS = {
     },
     "voice_chat": {
         "enabled": False,
-        "base_url": "http://localhost:3000",
+        "base_url": "http://localhost:3100",
         # Credentials come from XAVIER_AIUI_EMAIL / XAVIER_AIUI_PASSWORD (see
         # _apply_env_overrides); config.json is tracked in plaintext.
         "email": None,
@@ -54,7 +54,8 @@ DEFAULTS = {
         "model_code": None,
         "wake_aliases": ["ariana", "arianne", "aria"],
         "connect_timeout_seconds": 5,
-        "read_timeout_seconds": 30,
+        # Per-read stall guard: local LLMs can pause well over 30s mid-reply.
+        "read_timeout_seconds": 120,
         "max_response_seconds": 120,
         "playback_command": None,
     },

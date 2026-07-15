@@ -11,6 +11,7 @@ from voice_chat.client import (
     _extract_token,
     _parse_wav_header,
     _read_exact,
+    read_chunk,
 )
 
 
@@ -56,6 +57,15 @@ def test_read_exact_collects_short_reads():
 def test_read_exact_premature_eof_raises():
     with pytest.raises(VoiceChatError):
         _read_exact(DribbleResp(b"x" * 10), 44)
+
+
+def test_read_chunk_wraps_socket_stall():
+    class StallResp:
+        def read(self, n):
+            raise TimeoutError("timed out")
+
+    with pytest.raises(VoiceChatError, match="interrupted"):
+        read_chunk(StallResp(), 4096)
 
 
 def test_parse_wav_header():

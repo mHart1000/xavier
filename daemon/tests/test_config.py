@@ -17,7 +17,7 @@ def test_missing_file_uses_defaults(tmp_path, monkeypatch):
     assert vc["enabled"] is False
     assert vc["email"] is None
     assert vc["password"] is None
-    assert vc["base_url"] == "http://localhost:3000"
+    assert vc["base_url"] == "http://localhost:3100"
     assert config["listener"]["input_silence_timeout_seconds"] == 5
 
 

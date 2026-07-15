@@ -42,7 +42,8 @@
     "allow_continuous_commands_without_wake": true
   },
   "voice_chat": {
-    "enabled": true
+    "enabled": true,
+    "base_url": "http://localhost:3100"
   },
   "protocol": {
     "native_messaging_host": "com.xavier.voice_browser"

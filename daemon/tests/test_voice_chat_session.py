@@ -148,6 +148,27 @@ def test_overlapping_chat_dropped(mock_output_cls):
 
 
 @patch("voice_chat.session.AudioOutput")
+def test_read_stall_is_clean_error(mock_output_cls):
+    class StallResp:
+        def read(self, n):
+            raise TimeoutError("timed out")
+
+    class StallClient(FakeClient):
+        def chat(self, text, conversation_id=None):
+            return StallResp(), 24000, 1, None
+
+    listener = FakeListener()
+    session, events = make_session(listener, StallClient())
+    session.handle("hello")
+    wait_idle(session)
+
+    assert events[-1]["state"] == "error"
+    assert "interrupted" in events[-1]["error"]
+    mock_output_cls.return_value.abort.assert_called_once()
+    assert listener.calls == ["pause", "resume"]
+
+
+@patch("voice_chat.session.AudioOutput")
 def test_max_response_seconds_aborts_playback(mock_output_cls):
     class EndlessResp:
         def read(self, n):
