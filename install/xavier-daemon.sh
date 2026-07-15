@@ -14,6 +14,11 @@ if [ ! -d "$DAEMON_DIR/venv" ]; then
     exit 1
 fi
 
+# Load local secrets (voice-chat credentials) if present; gitignored.
+set -a
+[ -f "$DAEMON_DIR/.env" ] && . "$DAEMON_DIR/.env"
+set +a
+
 # Activate virtual environment and run daemon
 cd "$DAEMON_DIR"
 source venv/bin/activate

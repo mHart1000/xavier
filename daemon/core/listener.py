@@ -24,11 +24,13 @@ logger = logging.getLogger(__name__)
 
 class Listener:
 
-    def __init__(self, config, emit_command, emit_event=None):
+    def __init__(self, config, emit_command, emit_event=None, on_voice_chat=None):
         self.config = config
         self.emit = emit_command
         # Sends non-command messages (input_mode status); no-op if unset.
         self.emit_event = emit_event or (lambda event: None)
+        # Daemon-internal voice_chat intents go here, never to the extension.
+        self.on_voice_chat = on_voice_chat
         self.audio = None
         self.vad = None
         self.segmenter = None
@@ -39,6 +41,7 @@ class Listener:
         self._confirm_prev = None
         self._deafened_prev = False
         self._stop = threading.Event()
+        self._closed = False
 
     @property
     def state(self):
@@ -58,7 +61,8 @@ class Listener:
         sample_rate = self.config["audio"]["sample_rate"]
 
         # Build policy first so a bad listener mode fails before loading models.
-        self.policy = ActivationPolicy(listener_cfg, self.config["safety"])
+        self.policy = ActivationPolicy(listener_cfg, self.config["safety"],
+                                       self.config.get("voice_chat"))
 
         self.recognizer = create_recognizer(
             self.config["stt"], sample_rate, wake_phrase=listener_cfg.get("wake_phrase")
@@ -185,12 +189,23 @@ class Listener:
                 continue
 
             logger.info("transcript=%r (conf=%.2f)", transcript.text, transcript.confidence)
-            command, reason = self.policy.evaluate(transcript.text, transcript.confidence)
-            if command is not None:
+            command, reason = self.policy.evaluate(
+                transcript.text, transcript.confidence, wake_heard=transcript.wake_heard
+            )
+            if command is None:
+                logger.info("transcript=%r rejected: %s", transcript.text, reason)
+            elif command["name"] == "voice_chat":
+                # Daemon-internal: never sent to the extension. The callback only
+                # spawns the session thread — pause() joins this worker, no self-join.
+                if self.on_voice_chat is not None:
+                    logger.info("voice chat intent (%s): %r", reason, command["args"]["text"])
+                    self.on_voice_chat(command["args"]["text"])
+                else:
+                    logger.info("voice chat intent dropped (no handler): %r",
+                                command["args"]["text"])
+            else:
                 self.emit(command)
                 logger.info("emitted %s (%s)", command["name"], reason)
-            else:
-                logger.info("transcript=%r rejected: %s", transcript.text, reason)
 
     def pause(self):
         """Release the mic and stop the worker thread, keeping models loaded so
@@ -218,7 +233,10 @@ class Listener:
         logger.info("Listener paused (mic released)")
 
     def resume(self):
-        """Reopen the mic and restart the worker thread. No-op if already running."""
+        """Reopen the mic and restart the worker thread. No-op if already running
+        or after stop() — a late voice-chat resume must not re-open the mic."""
+        if self._closed:
+            return
         if self.thread is not None and self.thread.is_alive():
             return
         self.vad.reset()
@@ -245,6 +263,7 @@ class Listener:
             self.policy.exit_input_mode()
 
     def stop(self):
+        self._closed = True
         self.pause()
         if self.recognizer is not None:
             self.recognizer.close()

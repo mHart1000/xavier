@@ -199,6 +199,63 @@ def test_pause_emits_listening_state_off_once(listener):
     assert len(offs) == 1
 
 
+def test_voice_chat_command_routes_to_callback():
+    from stt.base import Transcript
+
+    emit_command = MagicMock()
+    on_voice_chat = MagicMock()
+
+    with patch("core.listener.create_recognizer") as create_rec, \
+         patch("core.listener.SileroVad") as vad_cls, \
+         patch("core.listener.Segmenter") as seg_cls, \
+         patch("core.listener.ActivationPolicy") as policy_cls, \
+         patch("core.listener.AudioInput") as audio_cls:
+
+        vad_cls.return_value.is_speech.return_value = 1.0  # real float for >= threshold
+        audio = MagicMock()
+        audio.frames.return_value = iter([b"\x00" * 1024])
+        audio_cls.return_value = audio
+
+        seg = MagicMock()
+        seg.feed.return_value = b"\x00" * 3200
+        seg_cls.return_value = seg
+
+        recognizer = MagicMock()
+        recognizer.transcribe.return_value = Transcript(
+            text="Browser, hello there.", confidence=0.9, wake_heard=True)
+        create_rec.return_value = recognizer
+
+        policy = MagicMock()
+        policy.in_input_mode = False
+        policy.deafened = False
+        policy.confirm_pending.return_value = None
+        policy.evaluate.return_value = (
+            {"type": "command", "name": "voice_chat", "args": {"text": "hello there."}},
+            "chat",
+        )
+        policy_cls.return_value = policy
+
+        lis = Listener(make_config(), emit_command, on_voice_chat=on_voice_chat)
+        lis.start()
+        lis.thread.join(timeout=5)
+
+        on_voice_chat.assert_called_once_with("hello there.")
+        emit_command.assert_not_called()
+        assert policy.evaluate.call_args.kwargs["wake_heard"] is True
+        lis.stop()
+
+
+def test_resume_after_stop_is_noop(listener):
+    listener.start()
+    listener.stop()
+    before = listener._audio_cls.call_count
+
+    listener.resume()
+
+    assert listener._audio_cls.call_count == before  # mic stays closed
+    assert listener.audio is None
+
+
 def test_listening_state_indicator_emits_on_transition():
     events = []
     lis = Listener(make_config(), emit_command=lambda c: None, emit_event=events.append)

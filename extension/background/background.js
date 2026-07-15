@@ -32,6 +32,9 @@ const LISTEN_STATES = ["listening", "deafened", "off"]
 // Whether the daemon is in dictation mode; combined with listenState for the badge.
 let inputModeActive = false
 
+// Whether a voice-chat reply is being fetched/played (daemon voice_chat events).
+let voiceChatActive = false
+
 /**
  * Initialize native messaging connection
  */
@@ -46,6 +49,8 @@ function connectNativeHost() {
     nativePort.onDisconnect.addListener(() => {
       console.error("[Xavier] Native host disconnected:", browser.runtime.lastError)
       nativePort = null
+      voiceChatActive = false  // daemon gone; don't strand a blue badge
+      renderBadge()
 
       // Let an open popup show "Daemon not connected".
       browser.runtime.sendMessage({ type: "listening_state_changed", state: listeningState() })
@@ -113,6 +118,10 @@ function handleNativeMessage(message) {
       handleListeningState(message)
       break
 
+    case "voice_chat":
+      handleVoiceChat(message)
+      break
+
     default:
       console.warn("[Xavier] Unknown message type:", message.type)
   }
@@ -145,6 +154,14 @@ function handleListeningState(message) {
   }
 }
 
+/**
+ * Daemon voice-chat session lifecycle: "start" | "end" | "error".
+ */
+function handleVoiceChat(message) {
+  voiceChatActive = message.state === "start"
+  renderBadge()
+}
+
 function flashListeningStateInTab(state) {
   browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
     if (!tabs[0]) return
@@ -156,13 +173,18 @@ function flashListeningStateInTab(state) {
 }
 
 /**
- * Toolbar badge derived from both flags, so event order doesn't matter:
- * input mode wins, then deafened, else clear.
+ * Toolbar badge derived from the flags, so event order doesn't matter:
+ * input mode wins, then voice chat, then deafened/off, else clear.
  */
 function renderBadge() {
   if (inputModeActive) {
     browser.action.setBadgeText({ text: "●" })
     browser.action.setBadgeBackgroundColor({ color: "#ff6b00" })
+  } else if (voiceChatActive) {
+    // Stays blue across the transient "off" listening_state while the mic is
+    // paused for reply playback.
+    browser.action.setBadgeText({ text: "●" })
+    browser.action.setBadgeBackgroundColor({ color: "#0060df" })
   } else if (listenState === "deafened") {
     browser.action.setBadgeText({ text: "–" })
     browser.action.setBadgeBackgroundColor({ color: "#6b6b6b" })

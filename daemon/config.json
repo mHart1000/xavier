@@ -41,6 +41,9 @@
     "allow_destructive_actions": false,
     "allow_continuous_commands_without_wake": true
   },
+  "voice_chat": {
+    "enabled": true
+  },
   "protocol": {
     "native_messaging_host": "com.xavier.voice_browser"
   },
