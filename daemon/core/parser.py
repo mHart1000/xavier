@@ -57,6 +57,7 @@ PHRASE_COMMANDS = {
     "links": "links_show",
     "hide links": "hints_hide",
     "click": "click",
+    "hover": "hover",
     "open in new tab": "open_new_tab",
     "open in a new tab": "open_new_tab",
     "control click": "open_new_tab",

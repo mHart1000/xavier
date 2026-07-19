@@ -298,6 +298,7 @@ async function handleCommand(message) {
       case "highlight_next":
       case "highlight_previous":
       case "click":
+      case "hover":
       case "open_new_tab":
       case "clear_highlights":
       case "cancel":

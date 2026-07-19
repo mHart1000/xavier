@@ -60,6 +60,7 @@ if (window.__xavierContentLoaded) {
   let hintElements = []
   let linkTargets = []
   let activeTarget = null
+  let hoverTarget = null
   let matchList = []
   let matchIndex = 0
   let inputModeActive = false
@@ -125,6 +126,10 @@ if (window.__xavierContentLoaded) {
 
         case "click":
           clickActiveTarget()
+          break
+
+        case "hover":
+          hoverActiveTarget()
           break
 
         case "open_new_tab":
@@ -827,6 +832,61 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
+   * Hover the active highlighted target: fire the pointer/mouse event sequence a
+   * script-driven hover handler listens for (dropdown menus, tooltips). The
+   * highlight/overlay stays up so the revealed content can then be targeted.
+   * Note: the CSS :hover pseudo-class responds only to the real cursor and can't
+   * be triggered synthetically, so pure-CSS hover styling won't react.
+   */
+  function hoverActiveTarget() {
+    if (!activeTarget) {
+      throw new Error("No highlighted target to hover")
+    }
+
+    dispatchHover(activeTarget)
+    console.log("[Xavier Content] Hovered active target")
+  }
+
+  /**
+   * Leave any previously hovered element, then dispatch the enter sequence at the
+   * element's center. "over"/"move" bubble; "enter" does not.
+   */
+  function dispatchHover(el) {
+    clearHover()
+
+    const rect = el.getBoundingClientRect()
+    const x = rect.left + rect.width / 2
+    const y = rect.top + rect.height / 2
+    const base = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }
+
+    el.dispatchEvent(new PointerEvent("pointerover", base))
+    el.dispatchEvent(new PointerEvent("pointerenter", { ...base, bubbles: false }))
+    el.dispatchEvent(new MouseEvent("mouseover", base))
+    el.dispatchEvent(new MouseEvent("mouseenter", { ...base, bubbles: false }))
+    el.dispatchEvent(new MouseEvent("mousemove", base))
+
+    hoverTarget = el
+  }
+
+  /**
+   * Fire the leave sequence on the last hovered element (closes a revealed menu),
+   * mirroring dispatchHover. No-op if nothing is hovered.
+   */
+  function clearHover() {
+    if (!hoverTarget) return
+
+    const el = hoverTarget
+    hoverTarget = null
+    const rect = el.getBoundingClientRect()
+    const base = { bubbles: true, cancelable: true, view: window, clientX: rect.left, clientY: rect.top }
+
+    el.dispatchEvent(new PointerEvent("pointerout", base))
+    el.dispatchEvent(new PointerEvent("pointerleave", { ...base, bubbles: false }))
+    el.dispatchEvent(new MouseEvent("mouseout", base))
+    el.dispatchEvent(new MouseEvent("mouseleave", { ...base, bubbles: false }))
+  }
+
+  /**
    * Open the active highlighted target's link in a new background tab (focus
    * stays on the current tab), then clear the highlight; the overlay stays, to
    * open several in a row. Tab creation belongs to the background script, so
@@ -905,6 +965,7 @@ if (window.__xavierContentLoaded) {
    */
   function handleCancel() {
     clearHighlights()
+    clearHover()
     hideHints()
     hideInputIndicator()
     hideConfirmPrompt()

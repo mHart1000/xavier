@@ -82,6 +82,12 @@ def test_bare_click_parses():
     assert cmd["args"] == {}
 
 
+def test_bare_hover_parses():
+    cmd = parse_command("hover")
+    assert cmd["name"] == "hover"
+    assert cmd["args"] == {}
+
+
 def test_highlight_text_parses():
     cmd = parse_command("highlight sign in")
     assert cmd["name"] == "highlight_text"

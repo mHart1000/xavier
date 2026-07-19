@@ -110,6 +110,7 @@ Name an element by its visible text or first class name, then act on it (paralle
 | `highlight_previous` | none                    | Move the highlight to the previous element matching the current text (wraps).           |
 | `link_select`        | `{ "number": N }`       | Select the Nth label from the most recent `links_show` (1-based) as the active target — highlights it; does not click. Errors if `number` is out of range. |
 | `click`              | none                    | Click the active highlighted target, then clear the highlight and hide the hint/link overlay. |
+| `hover`              | none                    | Fire the pointer/mouse enter sequence over the active highlighted target to trigger script-driven hover effects (dropdown menus, tooltips); the overlay stays up. Reaches JS `mouseenter`/`mouseover` handlers, not the CSS `:hover` pseudo-class (which only responds to the real cursor). |
 | `open_new_tab`       | none                    | Open the active highlighted target's link in a new background tab (focus stays on the current tab), then clear the highlight. |
 | `clear_highlights`   | none                    | Remove the highlight and clear the active target.                                       |
 
@@ -248,7 +249,7 @@ Defined error codes:
 | `UNKNOWN_COMMAND`   | `name` not in the command reference.                     |
 | `INVALID_ARGS`      | A required argument was missing or malformed.            |
 | `TEXT_NOT_FOUND`    | `highlight_text` matched no visible element.             |
-| `NO_ACTIVE_TARGET`  | `click` called with no highlighted target.               |
+| `NO_ACTIVE_TARGET`  | `click`/`hover` called with no highlighted target.       |
 | `NO_EDITABLE_TARGET`| `input_text` called with no editable element focused.    |
 | `EXECUTION_FAILED`  | The command was valid but the browser action failed.     |
 
