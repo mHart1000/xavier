@@ -42,6 +42,7 @@ LOW_RISK = frozenset({
     "highlight_text", "highlight_next", "highlight_previous", "clear_highlights",
     "link_select",  # numbered-link select is visual only; the click stays MEDIUM
     "hover",  # only reveals content (menus/tooltips); no navigation or mutation
+    "link_hover",  # select-and-hover in one step; same visual-only risk as its parts
     "input_text",  # typing into a field the user already focused; no confirmation
     "cancel",
 })

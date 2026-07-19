@@ -160,7 +160,7 @@ def wake_grammar(wake_phrase):
 
 def command_triggers():
     """Normalized phrases that route an utterance to the Whisper (accuracy) path."""
-    return ("open url", "highlight", "input", "link")
+    return ("open url", "highlight", "input", "hover link", "link")
 
 
 def parse_command(transcript, confidence=1.0):
@@ -194,6 +194,13 @@ def parse_command(transcript, confidence=1.0):
                 # Keep the full phrase: the trailing number may have been a real word.
                 args["literal"] = inner
         return _make_command("highlight_text", args, confidence, raw)
+
+    # "hover link N": select the Nth link and hover it in one step.
+    hover_link_match = re.match(r'^hover link (.+)$', normalized)
+    if hover_link_match:
+        number = _parse_number(hover_link_match.group(1).split())
+        if number is not None:
+            return _make_command("link_hover", {"number": number}, confidence, raw)
 
     link_match = re.match(r'^link (.+)$', normalized)
     if link_match:

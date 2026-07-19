@@ -120,6 +120,11 @@ if (window.__xavierContentLoaded) {
           selectLink(args)
           break
 
+        case "link_hover":
+          selectLink(args)
+          hoverActiveTarget()
+          break
+
         case "highlight_text":
           highlightText(args)
           break

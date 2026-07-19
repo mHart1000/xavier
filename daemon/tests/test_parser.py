@@ -60,7 +60,7 @@ def test_wake_grammar_is_minimal():
 
 
 def test_command_triggers():
-    assert command_triggers() == ("open url", "highlight", "input", "link")
+    assert command_triggers() == ("open url", "highlight", "input", "hover link", "link")
 
 
 def test_command_grammar_contains_input():
@@ -257,6 +257,20 @@ def test_link_select_compound_number():
 def test_link_without_number_is_no_match():
     assert parse_command("link") is None
     assert parse_command("link foo") is None
+
+
+def test_hover_link_word():
+    cmd = parse_command("hover link twenty")
+    assert cmd["name"] == "link_hover"
+    assert cmd["args"]["number"] == 20
+
+
+def test_hover_link_digit():
+    assert parse_command("hover link 5")["args"]["number"] == 5
+
+
+def test_hover_link_without_number_is_no_match():
+    assert parse_command("hover link") is None
 
 
 def test_command_grammar_contains_link():

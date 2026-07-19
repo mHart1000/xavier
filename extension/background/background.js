@@ -294,6 +294,7 @@ async function handleCommand(message) {
       case "hints_hide":
       case "links_show":
       case "link_select":
+      case "link_hover":
       case "highlight_text":
       case "highlight_next":
       case "highlight_previous":
