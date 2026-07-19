@@ -852,43 +852,37 @@ if (window.__xavierContentLoaded) {
     console.log("[Xavier Content] Hovered active target")
   }
 
-  /**
-   * Leave any previously hovered element, then dispatch the enter sequence at the
-   * element's center. "over"/"move" bubble; "enter" does not.
-   */
+  // Pointer/mouse sequences a script hover handler expects: enter to reveal, leave to dismiss.
+  const HOVER_ENTER_EVENTS = ["pointerover", "pointerenter", "mouseover", "mouseenter", "mousemove"]
+  const HOVER_LEAVE_EVENTS = ["pointerout", "pointerleave", "mouseout", "mouseleave"]
+
+  /** Leave any previously hovered element, then fire the enter sequence at the target's center. */
   function dispatchHover(el) {
     clearHover()
-
     const rect = el.getBoundingClientRect()
-    const x = rect.left + rect.width / 2
-    const y = rect.top + rect.height / 2
-    const base = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }
-
-    el.dispatchEvent(new PointerEvent("pointerover", base))
-    el.dispatchEvent(new PointerEvent("pointerenter", { ...base, bubbles: false }))
-    el.dispatchEvent(new MouseEvent("mouseover", base))
-    el.dispatchEvent(new MouseEvent("mouseenter", { ...base, bubbles: false }))
-    el.dispatchEvent(new MouseEvent("mousemove", base))
-
+    fireMouseSequence(el, HOVER_ENTER_EVENTS, rect.left + rect.width / 2, rect.top + rect.height / 2)
     hoverTarget = el
   }
 
-  /**
-   * Fire the leave sequence on the last hovered element (closes a revealed menu),
-   * mirroring dispatchHover. No-op if nothing is hovered.
-   */
+  /** Fire the leave sequence on the last hovered element (closes a revealed menu); no-op if none. */
   function clearHover() {
     if (!hoverTarget) return
-
     const el = hoverTarget
     hoverTarget = null
     const rect = el.getBoundingClientRect()
-    const base = { bubbles: true, cancelable: true, view: window, clientX: rect.left, clientY: rect.top }
+    fireMouseSequence(el, HOVER_LEAVE_EVENTS, rect.left, rect.top)
+  }
 
-    el.dispatchEvent(new PointerEvent("pointerout", base))
-    el.dispatchEvent(new PointerEvent("pointerleave", { ...base, bubbles: false }))
-    el.dispatchEvent(new MouseEvent("mouseout", base))
-    el.dispatchEvent(new MouseEvent("mouseleave", { ...base, bubbles: false }))
+  /**
+   * Dispatch pointer/mouse events on el at viewport point (x, y): PointerEvent for
+   * "pointer*" names else MouseEvent; enter/leave don't bubble, the rest do.
+   */
+  function fireMouseSequence(el, names, x, y) {
+    for (const name of names) {
+      const bubbles = !(name.endsWith("enter") || name.endsWith("leave"))
+      const Ctor = name.startsWith("pointer") ? PointerEvent : MouseEvent
+      el.dispatchEvent(new Ctor(name, { bubbles, cancelable: true, view: window, clientX: x, clientY: y }))
+    }
   }
 
   /**
