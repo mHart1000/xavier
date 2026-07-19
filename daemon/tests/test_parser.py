@@ -273,6 +273,12 @@ def test_hover_link_without_number_is_no_match():
     assert parse_command("hover link") is None
 
 
+def test_menu_hover_parses():
+    cmd = parse_command("menu hover")
+    assert cmd["name"] == "menu_hover"
+    assert cmd["args"] == {}
+
+
 def test_command_grammar_contains_link():
     assert "link" in command_grammar()
 

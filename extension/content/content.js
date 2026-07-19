@@ -27,6 +27,8 @@ if (window.__xavierContentLoaded) {
   const XAVIER_INPUT_INDICATOR_ID = "xavier-input-indicator"
   const XAVIER_CONFIRM_PROMPT_ID = "xavier-confirm-prompt"
   const DEFAULT_SCROLL_AMOUNT = 200
+  // Delay before "menu hover" re-labels: lets a hover-triggered menu finish rendering.
+  const MENU_REVEAL_DELAY_MS = 150
 
   // Elements both the hint overlay and text highlighting can target.
   const CLICKABLE_SELECTORS = [
@@ -135,6 +137,10 @@ if (window.__xavierContentLoaded) {
 
         case "hover":
           hoverActiveTarget()
+          break
+
+        case "menu_hover":
+          menuHover()
           break
 
         case "open_new_tab":
@@ -850,6 +856,12 @@ if (window.__xavierContentLoaded) {
 
     dispatchHover(activeTarget)
     console.log("[Xavier Content] Hovered active target")
+  }
+
+  /** Hover the active target to open its menu, then re-run "show links" over the revealed items. */
+  function menuHover() {
+    hoverActiveTarget()
+    setTimeout(showLinks, MENU_REVEAL_DELAY_MS)
   }
 
   // Pointer/mouse sequences a script hover handler expects: enter to reveal, leave to dismiss.
