@@ -27,8 +27,10 @@ if (window.__xavierContentLoaded) {
   const XAVIER_INPUT_INDICATOR_ID = "xavier-input-indicator"
   const XAVIER_CONFIRM_PROMPT_ID = "xavier-confirm-prompt"
   const DEFAULT_SCROLL_AMOUNT = 200
-  // Delay before "menu hover" re-labels: lets a hover-triggered menu finish rendering.
-  const MENU_REVEAL_DELAY_MS = 150
+  // "menu hover" re-labels once the hover-revealed menu appears: poll the clickable
+  // count this often, giving up (and re-labeling anyway) after the max wait.
+  const MENU_REVEAL_POLL_MS = 60
+  const MENU_REVEAL_MAX_MS = 600
 
   // Elements both the hint overlay and text highlighting can target.
   const CLICKABLE_SELECTORS = [
@@ -860,8 +862,21 @@ if (window.__xavierContentLoaded) {
 
   /** Hover the active target to open its menu, then re-run "show links" over the revealed items. */
   function menuHover() {
+    // Baseline before the hover; an animated menu renders a frame or two later, so
+    // relabel as soon as the clickable count changes, or once the max wait elapses.
+    const baseline = collectLabelableElements().length
     hoverActiveTarget()
-    setTimeout(showLinks, MENU_REVEAL_DELAY_MS)
+
+    const start = performance.now()
+    const relabel = () => {
+      if (collectLabelableElements().length !== baseline ||
+          performance.now() - start >= MENU_REVEAL_MAX_MS) {
+        showLinks()
+      } else {
+        setTimeout(relabel, MENU_REVEAL_POLL_MS)
+      }
+    }
+    setTimeout(relabel, MENU_REVEAL_POLL_MS)
   }
 
   // Pointer/mouse sequences a script hover handler expects: enter to reveal, leave to dismiss.
