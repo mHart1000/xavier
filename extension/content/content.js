@@ -27,6 +27,10 @@ if (window.__xavierContentLoaded) {
   const XAVIER_INPUT_INDICATOR_ID = "xavier-input-indicator"
   const XAVIER_CONFIRM_PROMPT_ID = "xavier-confirm-prompt"
   const DEFAULT_SCROLL_AMOUNT = 200
+  // "menu hover" re-labels once the hover-revealed menu appears: poll the clickable
+  // count this often, giving up (and re-labeling anyway) after the max wait.
+  const MENU_REVEAL_POLL_MS = 60
+  const MENU_REVEAL_MAX_MS = 600
 
   // Elements both the hint overlay and text highlighting can target.
   const CLICKABLE_SELECTORS = [
@@ -60,6 +64,7 @@ if (window.__xavierContentLoaded) {
   let hintElements = []
   let linkTargets = []
   let activeTarget = null
+  let hoverTarget = null
   let matchList = []
   let matchIndex = 0
   let inputModeActive = false
@@ -119,12 +124,25 @@ if (window.__xavierContentLoaded) {
           selectLink(args)
           break
 
+        case "link_hover":
+          selectLink(args)
+          hoverActiveTarget()
+          break
+
         case "highlight_text":
           highlightText(args)
           break
 
         case "click":
           clickActiveTarget()
+          break
+
+        case "hover":
+          hoverActiveTarget()
+          break
+
+        case "menu_hover":
+          menuHover()
           break
 
         case "open_new_tab":
@@ -827,6 +845,74 @@ if (window.__xavierContentLoaded) {
   }
 
   /**
+   * Hover the active highlighted target: fire the pointer/mouse event sequence a
+   * script-driven hover handler listens for (dropdown menus, tooltips). The
+   * highlight/overlay stays up so the revealed content can then be targeted.
+   * Note: the CSS :hover pseudo-class responds only to the real cursor and can't
+   * be triggered synthetically, so pure-CSS hover styling won't react.
+   */
+  function hoverActiveTarget() {
+    if (!activeTarget) {
+      throw new Error("No highlighted target to hover")
+    }
+
+    dispatchHover(activeTarget)
+    console.log("[Xavier Content] Hovered active target")
+  }
+
+  /** Hover the active target to open its menu, then re-run "show links" over the revealed items. */
+  function menuHover() {
+    // Baseline before the hover; an animated menu renders a frame or two later, so
+    // relabel as soon as the clickable count changes, or once the max wait elapses.
+    const baseline = collectLabelableElements().length
+    hoverActiveTarget()
+
+    const start = performance.now()
+    const relabel = () => {
+      if (collectLabelableElements().length !== baseline ||
+          performance.now() - start >= MENU_REVEAL_MAX_MS) {
+        showLinks()
+      } else {
+        setTimeout(relabel, MENU_REVEAL_POLL_MS)
+      }
+    }
+    setTimeout(relabel, MENU_REVEAL_POLL_MS)
+  }
+
+  // Pointer/mouse sequences a script hover handler expects: enter to reveal, leave to dismiss.
+  const HOVER_ENTER_EVENTS = ["pointerover", "pointerenter", "mouseover", "mouseenter", "mousemove"]
+  const HOVER_LEAVE_EVENTS = ["pointerout", "pointerleave", "mouseout", "mouseleave"]
+
+  /** Leave any previously hovered element, then fire the enter sequence at the target's center. */
+  function dispatchHover(el) {
+    clearHover()
+    const rect = el.getBoundingClientRect()
+    fireMouseSequence(el, HOVER_ENTER_EVENTS, rect.left + rect.width / 2, rect.top + rect.height / 2)
+    hoverTarget = el
+  }
+
+  /** Fire the leave sequence on the last hovered element (closes a revealed menu); no-op if none. */
+  function clearHover() {
+    if (!hoverTarget) return
+    const el = hoverTarget
+    hoverTarget = null
+    const rect = el.getBoundingClientRect()
+    fireMouseSequence(el, HOVER_LEAVE_EVENTS, rect.left, rect.top)
+  }
+
+  /**
+   * Dispatch pointer/mouse events on el at viewport point (x, y): PointerEvent for
+   * "pointer*" names else MouseEvent; enter/leave don't bubble, the rest do.
+   */
+  function fireMouseSequence(el, names, x, y) {
+    for (const name of names) {
+      const bubbles = !(name.endsWith("enter") || name.endsWith("leave"))
+      const Ctor = name.startsWith("pointer") ? PointerEvent : MouseEvent
+      el.dispatchEvent(new Ctor(name, { bubbles, cancelable: true, view: window, clientX: x, clientY: y }))
+    }
+  }
+
+  /**
    * Open the active highlighted target's link in a new background tab (focus
    * stays on the current tab), then clear the highlight; the overlay stays, to
    * open several in a row. Tab creation belongs to the background script, so
@@ -905,6 +991,7 @@ if (window.__xavierContentLoaded) {
    */
   function handleCancel() {
     clearHighlights()
+    clearHover()
     hideHints()
     hideInputIndicator()
     hideConfirmPrompt()
